@@ -1,7 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-from __future__ import print_function, division
+#!/usr/bin/env python3
 
 import argparse
 import datetime
@@ -176,7 +173,6 @@ def _draw_occupancy_grid(ax, occ_msg):
     extent = [ox, ox + info.width * res, oy, oy + info.height * res]
     ax.imshow(img, extent=extent, origin='lower', aspect='equal',
               zorder=0, interpolation='nearest')
-
 
 
 def _save_session(path, data):

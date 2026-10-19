@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*-
-
-from __future__ import print_function, division
-
 import numpy as np
 
 from .costs import pick_best_angle

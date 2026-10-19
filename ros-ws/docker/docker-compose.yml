@@ -1,0 +1,23 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CATKIN_PKGS: ${CATKIN_PKGS:-2}
+        CATKIN_JOBS: ${CATKIN_JOBS:-3}
+    image: tiago_dev_melodic:latest
+    container_name: tiago_dev
+    stdin_open: true
+    tty: true
+    network_mode: host
+    shm_size: 1gb
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - PYTHONDONTWRITEBYTECODE=1  # no root-owned __pycache__ in the bind mount
+      - ROS_MASTER_URI=${ROS_MASTER_URI:-http://localhost:11311}
+      - ROS_IP  # passed through only when set on the host
+    volumes:
+      - ..:/workspace/ros-ws
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw

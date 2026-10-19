@@ -77,11 +77,8 @@ The planner operates in a **4-D lattice** `(x, y, θ, d)` where `d ∈ {0, 1}` i
 ## Quick start
 
 ```bash
-# 1. Build
-cd ~/tiago_ws && catkin build tiago_door_planning
-
-# 2. Source
-source devel/setup.bash
+# 1. Build (from ros-ws/docker), then open a container shell
+make build && make shell
 
 # 3. Launch planning + execution servers (offline map backend)
 roslaunch tiago_door_planning door_planning.launch \

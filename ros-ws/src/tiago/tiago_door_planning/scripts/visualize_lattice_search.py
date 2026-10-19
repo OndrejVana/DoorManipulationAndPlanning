@@ -1,7 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-from __future__ import print_function, division
+#!/usr/bin/env python3
 
 import argparse
 import datetime
@@ -293,7 +290,6 @@ def _draw_scene(ax, hx, hy, hinge_yaw, handle_radius, open_angle_rad, opening_si
                 fontsize=14, color='black', zorder=12)
 
 
-
 def _draw_behind_door_overlay(ax, hx, hy, hinge_yaw, opening_sign,
                               view_half=1.5, alpha=0.38):
     """
@@ -572,7 +568,6 @@ def _build_session(args, live_cfg, hx, hy, hyaw, handle_radius, hinge_side,
         session['occ_data']       = np.array(occ_msg.data, dtype=np.int16).reshape(
                                         info.height, info.width)
     return session
-
 
 
 def _parse_args():

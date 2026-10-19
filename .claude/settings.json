@@ -1,0 +1,21 @@
+{
+  "env": {
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "true"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(make -C ros-ws/docker build)",
+      "Bash(make -C ros-ws/docker test)",
+      "Bash(make -C ros-ws/docker logs)",
+      "Bash(docker compose ps:*)",
+      "Bash(docker compose logs:*)",
+      "Bash(docker compose exec dev bash -lc:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:wiki.ros.org)",
+      "WebFetch(domain:docs.ros.org)"
+    ]
+  },
+  "outputStyle": "Concise",
+  "autoMemoryEnabled": true
+}

@@ -47,6 +47,8 @@
   <!-- Optional for costmap grid -->
   <exec_depend>map_msgs</exec_depend>
 
-  <!-- Python -->
+  <!-- Python 3.6 -->
   <exec_depend>rospy</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
 </package>

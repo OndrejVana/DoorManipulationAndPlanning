@@ -1,7 +1,5 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
 
-from __future__ import print_function, division
 import numpy as np
 
 from geometry_msgs.msg import PoseStamped

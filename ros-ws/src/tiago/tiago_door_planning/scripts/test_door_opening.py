@@ -1,7 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-from __future__ import print_function, division
+#!/usr/bin/env python3
 
 import sys
 import rospy
@@ -14,12 +11,6 @@ from tiago_door_planning.msg import (
     ExecuteDoorOpeningAction,
     ExecuteDoorOpeningGoal,
 )
-
-try:
-    _input = raw_input
-except NameError:
-    _input = input
-
 
 def plan(client, angle_rad, push_motion, planning_time, generate_arm=True):
     goal = PlanDoorOpeningGoal()
@@ -106,7 +97,7 @@ def step_execute(client, plan_result, velocity_scaling):
         rospy.loginfo("[Step] Waypoint %d/%d  x=%.3f y=%.3f  — press Enter to go, Ctrl-C to abort",
                       i + 1, n, pose.pose.position.x, pose.pose.position.y)
         try:
-            _input("")
+            input("")
         except (KeyboardInterrupt, EOFError):
             rospy.logwarn("[Step] Aborted at waypoint %d.", i + 1)
             return False

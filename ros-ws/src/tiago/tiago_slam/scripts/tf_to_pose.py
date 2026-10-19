@@ -1,6 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-from __future__ import print_function
 import rospy
 import tf2_ros
 from geometry_msgs.msg import PoseStamped, TransformStamped

@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-from __future__ import print_function, division
 import numpy as np
 
 
@@ -157,7 +155,6 @@ def circle_intersects_poly(cx, cy, r, poly):
 
     distances_sq = np.sum((center - closest_points) ** 2, axis=1)
     return bool(np.any(distances_sq <= r * r))
-
 
 
 def extract_occ_info(occ):

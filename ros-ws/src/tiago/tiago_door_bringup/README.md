@@ -148,7 +148,7 @@ export ROS_IP=10.68.0.128
 export ROS_IP=192.168.251.123
 ```
 
-- For detailed information about packgage deployment refer to [ROBOT_PKG_DEPLOYMENT.md](../../../../ROBOT_PKG_DEPLOYMENT.md)
+- Robot/laptop clock sync: [ROBOT_TIME_SYNC.md](../../../../ROBOT_TIME_SYNC.md)
 
 ## RViz Configuration
 

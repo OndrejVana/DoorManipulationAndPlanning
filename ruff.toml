@@ -1,0 +1,17 @@
+# Runtime is Python 3.6 (ROS Melodic + rebuilt py3 overlay); py37 is ruff's lowest target.
+# Avoid 3.7+ features by hand: dataclasses, `from __future__ import annotations`, walrus, f"{x=}".
+line-length = 120
+target-version = "py37"
+extend-exclude = [
+  "ros-ws/build",
+  "ros-ws/devel",
+  "ros-ws/logs",
+]
+
+[lint]
+select = [
+  "E4",  # pycodestyle import errors
+  "E7",  # pycodestyle statement errors
+  "E9",  # pycodestyle syntax and file errors
+  "F",   # Pyflakes checks, such as undefined names and unused imports
+]

@@ -1,68 +1,46 @@
-# TIAGo Development Workspace (ROS Melodic)
+# TIAGo Development Workspace (ROS Melodic, Python 3.6)
 
-This workspace contains the development environment for TIAGo robot autonomy development based on ROS Melodic.
+Docker dev environment for the TIAGo door-opening packages. ROS Melodic with the project nodes on Python 3.6
+(tf2, tf, PyKDL, eigenpy and moveit_commander are rebuilt for Python 3 inside the image).
 
 ## Prerequisites
 
-- Docker installed on your system
-- At least 10GB of free disk space (build requires substantial space)
-- At least 6GB of RAM (8GB+ strongly recommended for build process)
+- Docker with the compose plugin
+- ~15 GB disk, 16 GB RAM (first image build compiles the PAL stack and MoveIt bindings, ~25 min)
+- Compile parallelism is capped (`CATKIN_PKGS=2`, `CATKIN_JOBS=3`) to keep peak RAM ~8 GB; override with
+  e.g. `CATKIN_JOBS=6 make up` / `make build CATKIN_JOBS=6` on bigger machines
 
-## Building the Docker Image
-
-To build the Docker image locally with the latest version of all packages:
-
-```bash
-cd ros-ws
-docker build -t tiago_dev_melodic:latest -f Dockerfile .
-```
+## Usage
 
 ```bash
-docker build -t tiago_dev_melodic_orb3:latest -f Dockerfile.opencv4 .
+cd ros-ws/docker
+
+make up         # build image (first time) and start the container
+make shell      # open a shell in the container (allows X11 for Gazebo/RViz)
+make build      # catkin build the project packages
+make test       # run pytest for tiago_door_planning
+make down       # stop the container
+make logs       # follow container logs
 ```
 
-## Running the Container
-
-[Rocker](https://github.com/osrf/rocker) provides the best GUI support and user management for Docker containers:
+`ros-ws/` is mounted at `/workspace/ros-ws`, so edits on the host are live and `build/`, `devel/` persist.
+Inside the shell:
 
 ```bash
-# Install rocker if not already installed
-pip install rocker
-
-xhost +local:
-
-# Basic docker
-rocker --x11 --home \
-  --net=host \
-  --volume "$(pwd):/workspace:rw" \
-  --volume "$(pwd)/src:/tiago_dev_ws/src/custom:rw" \
-  -- \
-  tiago_dev_melodic:latest
-
-# Docker for ORB3
-rocker --x11 --home \
-  --net=host \
-  --volume "$(pwd):/workspace:rw" \
-  --volume "$(pwd)/src:/tiago_dev_ws/src/custom:rw" \
-  -- \
-  tiago_dev_melodic_orb3:latest
+roslaunch tiago_door_bringup main.launch
 ```
+
+For a real robot export `ROS_MASTER_URI` (and `ROS_IP`) on the host before `make up`; they are passed through.
+Sync clocks first: [ROBOT_TIME_SYNC.md](../ROBOT_TIME_SYNC.md).
 
 ## SSH
 
-Connecting to the robot via ethernet.
-
 ```bash
-  # Ethernet
-  ssh root@tiago-114c
-
-  #Over wifi
-  ssh root@192.168.130.114
-
+ssh root@tiago-114c        # Ethernet
+ssh root@192.168.130.114   # WiFi
 ```
 
 ## Resources
 
-- **TIAGo Tutorials**: [http://wiki.ros.org/Robots/TIAGo/Tutorials](http://wiki.ros.org/Robots/TIAGo/Tutorials)
-- **TIAGo Repository**: [https://github.com/pal-robotics/tiago_tutorials](https://github.com/pal-robotics/tiago_tutorials)
-- **PAL Robotics Documentation**: [http://wiki.ros.org/Robots/TIAGo](http://wiki.ros.org/Robots/TIAGo)
+- [TIAGo tutorials](http://wiki.ros.org/Robots/TIAGo/Tutorials)
+- [pal-robotics/tiago_tutorials](https://github.com/pal-robotics/tiago_tutorials)

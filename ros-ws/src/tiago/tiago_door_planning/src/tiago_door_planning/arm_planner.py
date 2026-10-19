@@ -1,8 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
-from __future__ import print_function, division
-
 import time as time_module
 from copy import deepcopy
 

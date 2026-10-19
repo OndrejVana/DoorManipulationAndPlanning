@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-from __future__ import print_function, division
-
 import numpy as np
 
 from tiago_door_planning.utils import yaw_from_quat, angle_wrap

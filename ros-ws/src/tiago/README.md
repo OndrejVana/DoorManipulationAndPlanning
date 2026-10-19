@@ -1,6 +1,6 @@
 # TIAGo Development Workspace
 
-ROS 1 (Melodic) workspace containing custom packages for autonomous door-opening with the TIAGo robot. The system covers perception, SLAM, navigation, arm manipulation, planning, and high-level behavior tree orchestration.
+ROS 1 (Melodic, Python 3.6) workspace containing custom packages for autonomous door-opening with the TIAGo robot. The system covers perception, SLAM, navigation, arm manipulation, planning, and high-level behavior tree orchestration.
 
 ## Package overview
 
@@ -19,12 +19,9 @@ ros-ws/src/tiago/
 
 ## Quick start
 
-```bash
-# Source ROS + workspace
-source /opt/ros/melodic/setup.bash
-source /tiago_public_ws/devel/setup.bash
-source /path/to/ros-ws/devel/setup.bash
+Inside the dev container (`cd ros-ws/docker && make up && make build && make shell`), sourcing is automatic:
 
+```bash
 # Full simulation run
 roslaunch tiago_door_bringup main.launch
 
@@ -34,15 +31,7 @@ roslaunch tiago_door_bringup main.launch gui:=false
 
 ## Building
 
-```bash
-cd /path/to/ros-ws
-
-# Optional: exclude packages you don't need
-catkin config --blacklist darknet_ros_msgs darknet_ros orb_slam2_ros orb_slam3_ros
-
-catkin build
-source devel/setup.bash
-```
+`make build` from `ros-ws/docker` (catkin build with `-DPYTHON_EXECUTABLE=/usr/bin/python3`, extending `/py3_ws`).
 
 ## System architecture
 
