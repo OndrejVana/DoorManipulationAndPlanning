@@ -1,0 +1,18 @@
+geometry_msgs/PoseStamped hinge_pose
+geometry_msgs/PoseStamped handle_pose
+string hinge_side
+bool push
+string arm
+float64[] base_x
+float64[] base_y
+float64[] base_yaw
+float64[] door_angles
+float64 sample_period
+float64[] elbow_hint
+---
+bool success
+float64 final_door_angle
+string message
+---
+float32 progress
+float32 gripper_error

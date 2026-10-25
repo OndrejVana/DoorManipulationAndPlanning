@@ -117,6 +117,9 @@ RUN mkdir -p ${PY3_WS}/src && cd ${PY3_WS}/src \
     && catkin build -p 1 -j ${CATKIN_JOBS} \
     && catkin clean --build --yes
 
+RUN python3 -m pip install --no-cache-dir --upgrade "pip==21.3.1" \
+    && python3 -m pip install --no-cache-dir pin==2.6.4
+
 # Tk backend for the matplotlib visualisers in tiago_door_planning/scripts (matplotlib.use('TkAgg')).
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends python3-tk \
