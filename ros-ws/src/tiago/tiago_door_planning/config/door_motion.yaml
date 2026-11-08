@@ -14,29 +14,120 @@ arm:
 collision:
   base_radius: 0.30
   base_center_height: 0.15
-  margin: 0.05
-
-frames:
-  odom: odom
-  base: base_footprint
+  margin: 0.03
 
 tracking:
   rate_hz: 50.0
   command_lookahead_s: 0.1
+  max_command_lead: 0.15
   joint_velocity_fraction: 0.5
-  timeout_factor: 3.0
+  timeout_factor: 5.0
+  stall_timeout_s: 3.0
   k_x: 1.0
-  k_y: 4.0
-  k_theta: 2.0
-  max_linear: 0.2
-  max_angular: 0.5
+  k_y: 10.0
+  k_theta: 6.0
+  k_heading: 1.0
+  max_linear: 0.3
+  max_angular: 0.8
   arm_gain: 3.0
   damping: 0.05
   nullspace_gain: 0.5
   limit_gain: 1.0
-  limit_margin: 0.25
-  gripper_error_slow: 0.01
-  gripper_error_stop: 0.03
+  limit_margin: 0.10
+  gripper_error_slow: 0.02
+  gripper_error_stop: 0.05
   gripper_error_abort: 0.08
   base_error_slow: 0.05
   base_error_stop: 0.15
+  min_base_rate: 0.3
+  catch_up_margin: 0.035
+  lost_grasp_deg: 10.0
+  lost_grasp_s: 1.0
+
+grasp:
+  arms: [right, left]
+  pull:
+    rpy: [3.14159, 1.5708, 0.0]
+    door_offset:
+      right: [0.06, 0.01, 0.025]
+      left: [-0.02, 0.01, 0.025]
+  push:
+    rpy: [-1.5708, 0.0, -1.5708]
+    door_offset:
+      right: [-0.03, 0.01, -0.02]
+      left: [0.02, 0.01, -0.02]
+  standoff: 0.20
+  unfold_q: [0.2, -1.0, 1.5, 1.9, -1.6, 0.6, 0.0]
+  approach_points: 6
+  move_speed: 0.7
+  approach_speed: 0.3
+  min_move_s: 1.0
+  hand_open: [0.0, 0.0, 0.0]
+  hand_closed: [2.0, 2.0, 0.8]
+  hand_duration_s: 2.0
+  max_sweep_deg: 45.0
+  pull_limit_deg: 45.0
+  release_drop: 0.08
+  retrace_tolerance: 0.1
+  contact_tolerance: 0.2
+  home_tolerance: 0.05
+  move_margin: 0.015
+  grasp_attempts: 2
+  max_grasp_error: 0.03
+  door_agreement_deg: 6.0
+  joint_step: 0.05
+  joint_margin: 0.10
+  ik_iterations: 300
+  random_seeds: 40
+
+planner:
+  resolution: 0.05
+  heading_bins: 16
+  step_cells: 4
+  samples_per_edge: 3
+  max_joint_step: 0.2
+  arm_speed: 0.3
+  angle_step_deg: 5.0
+  max_door_steps: 2
+  linear_speed: 0.2
+  angular_speed: 0.5
+  door_rate_deg: 10.0
+  regrasp_time: 15.0
+  max_expansions: 4000
+  stall_expansions: 600
+  ik_iterations: 60
+  joint_margin: 0.10
+  push_joint_margin: 0.25
+  workers: 8
+
+goal:
+  preferred_angle_deg: 90.0
+  pass_width: 0.60
+  handle_depth: 0.07
+  reach_min: 0.35
+  reach_max: 0.95
+  max_bearing_deg: 100.0
+  cell_size: 0.05
+  heading_bins: 16
+  extension_expansions: 300
+  regrasp_searches: 4
+  recoveries: 2
+  regrasps_without_progress: 2
+  min_progress_deg: 1.0
+  replan_base_error: 0.05
+  replan_heading_error_deg: 8.0
+
+scan:
+  max_age_s: 0.5
+  inlier_distance: 0.03
+  min_inliers: 10
+  angle_step_deg: 1.0
+  max_angle_deg: 120.0
+  hinge_clearance: 0.15
+  max_rays_through: 3
+  fit_error_deg: 3.0
+
+costmap:
+  timeout_s: 2.0
+  occupied_threshold: 100
+

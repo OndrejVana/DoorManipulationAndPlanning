@@ -30,7 +30,7 @@ TIAGO_thesis/
 │           ├── tiago_door_localization/  -> AprilTag perception, hinge/handle/doorway poses
 │           ├── tiago_move_base_control/  -> move_base wrapper + door approach goal generator
 │           ├── tiago_door_bt/            -> py_trees behavior tree executive
-│           ├── tiago_door_planning/      -> action server for base + arm trajectory planning
+│           ├── tiago_door_planning/      -> door opening: grasp, plan, closed-loop tracking, regrasp
 │           ├── tiago_arm_manipulation/   -> MoveIt arm motion planning and gripper control
 │           ├── tiago_slam/               -> SLAM implementations (slam_toolbox, RTAB-Map, ORB-SLAM)
 │           └── tiago_vicon/              -> VICON bridge, position logger, path record/replay
@@ -47,7 +47,7 @@ TIAGO_thesis/
 | [tiago_door_localization](ros-ws/src/tiago/tiago_door_localization/README.md) | AprilTag nodes, topics, doorway pose services |
 | [tiago_move_base_control](ros-ws/src/tiago/tiago_move_base_control/README.md) | Navigation nodes, goal sender, door approach generator |
 | [tiago_door_bt](ros-ws/src/tiago/tiago_door_bt/README.md) | Behavior tree phases and custom BT nodes |
-| [tiago_door_planning](ros-ws/src/tiago/tiago_door_planning/README.md) | Planning action server, action definition, parameters |
+| [tiago_door_planning](ros-ws/src/tiago/tiago_door_planning/README.md) | Door opening action servers, actions, parameters |
 | [tiago_arm_manipulation](ros-ws/src/tiago/tiago_arm_manipulation/README.md) | Arm services, gripper control, MoveIt parameters |
 | [tiago_slam](ros-ws/src/tiago/tiago_slam/README.md) | All SLAM modes, real robot usage, map saving |
 | [tiago_vicon](ros-ws/src/tiago/tiago_vicon/README.md) | VICON bridge, position logging, path replay |

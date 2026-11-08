@@ -4731,101 +4731,81 @@
           <use_parent_model_frame>0</use_parent_model_frame>
         </axis>
       </joint>
-      <link name='handle_front'>
-        <pose frame=''>0.75 0.045 1.05 3.14159 1.57079 3.14159</pose>
-        <collision name='handle_front_collision'>
+      <link name="handle_front">
+        <pose>0.75 0.090 1.050 0 0 0</pose>
+
+        <collision name="handle_front_bar_collision">
+          <pose>0 0 0 0 1.5707963 0</pose>
           <geometry>
-            <cylinder>
-              <radius>0.012</radius>
-              <length>0.12</length>
-            </cylinder>
+            <cylinder><radius>0.012</radius><length>0.16</length></cylinder>
           </geometry>
-          <max_contacts>10</max_contacts>
-          <surface>
-            <contact>
-              <ode/>
-            </contact>
-            <bounce/>
-            <friction>
-              <torsional>
-                <ode/>
-              </torsional>
-              <ode/>
-            </friction>
-          </surface>
         </collision>
-        <visual name='handle_front_visual'>
+        <collision name="handle_front_stem_collision">
+          <pose>0.065 -0.030 0 1.5707963 0 0</pose>
           <geometry>
-            <cylinder>
-              <radius>0.012</radius>
-              <length>0.12</length>
-            </cylinder>
+            <cylinder><radius>0.010</radius><length>0.06</length></cylinder>
+          </geometry>
+        </collision>
+        <visual name="handle_front_bar_visual">
+          <pose>0 0 0 0 1.5707963 0</pose>
+          <geometry>
+            <cylinder><radius>0.012</radius><length>0.16</length></cylinder>
           </geometry>
         </visual>
+        <visual name="handle_front_stem_visual">
+          <pose>0.065 -0.030 0 1.5707963 0 0</pose>
+          <geometry>
+            <cylinder><radius>0.010</radius><length>0.06</length></cylinder>
+          </geometry>
+        </visual>
+
         <inertial>
           <mass>0.5</mass>
           <inertia>
-            <ixx>0.001</ixx>
-            <iyy>0.001</iyy>
-            <izz>0.001</izz>
-            <ixy>0</ixy>
-            <ixz>0</ixz>
-            <iyz>0</iyz>
+            <ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
           </inertia>
         </inertial>
-        <self_collide>0</self_collide>
-        <enable_wind>0</enable_wind>
-        <kinematic>0</kinematic>
       </link>
       <joint name='handle_front_fixed' type='fixed'>
         <parent>door_panel</parent>
         <child>handle_front</child>
       </joint>
-      <link name='handle_back'>
-        <pose frame=''>0.75 -0.045 1.05 3.14159 1.57079 3.14159</pose>
-        <collision name='handle_back_collision'>
+      <link name="handle_back">
+        <pose>0.75 -0.090 1.050 0 0 0</pose>
+
+        <collision name="handle_back_bar_collision">
+          <pose>0 0 0 0 1.5707963 0</pose>
           <geometry>
-            <cylinder>
-              <radius>0.012</radius>
-              <length>0.12</length>
-            </cylinder>
+            <cylinder><radius>0.012</radius><length>0.16</length></cylinder>
           </geometry>
-          <max_contacts>10</max_contacts>
-          <surface>
-            <contact>
-              <ode/>
-            </contact>
-            <bounce/>
-            <friction>
-              <torsional>
-                <ode/>
-              </torsional>
-              <ode/>
-            </friction>
-          </surface>
         </collision>
-        <visual name='handle_back_visual'>
+        <collision name="handle_back_stem_collision">
+          <pose>0.065 0.030 0 1.5707963 0 0</pose>
           <geometry>
-            <cylinder>
-              <radius>0.012</radius>
-              <length>0.12</length>
-            </cylinder>
+            <cylinder><radius>0.010</radius><length>0.06</length></cylinder>
+          </geometry>
+        </collision>
+        <visual name="handle_back_bar_visual">
+          <pose>0 0 0 0 1.5707963 0</pose>
+          <geometry>
+            <cylinder><radius>0.012</radius><length>0.16</length></cylinder>
           </geometry>
         </visual>
+        <visual name="handle_back_stem_visual">
+          <pose>0.065 0.030 0 1.5707963 0 0</pose>
+          <geometry>
+            <cylinder><radius>0.010</radius><length>0.06</length></cylinder>
+          </geometry>
+        </visual>
+
         <inertial>
           <mass>0.5</mass>
           <inertia>
-            <ixx>0.001</ixx>
-            <iyy>0.001</iyy>
-            <izz>0.001</izz>
-            <ixy>0</ixy>
-            <ixz>0</ixz>
-            <iyz>0</iyz>
+            <ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
           </inertia>
         </inertial>
-        <self_collide>0</self_collide>
-        <enable_wind>0</enable_wind>
-        <kinematic>0</kinematic>
       </link>
       <joint name='handle_back_fixed' type='fixed'>
         <parent>door_panel</parent>
@@ -9607,101 +9587,81 @@
           <use_parent_model_frame>0</use_parent_model_frame>
         </axis>
       </joint>
-      <link name='handle_front'>
-        <pose frame=''>-0.75 0.045 1.05 3.14159 1.57079 3.14159</pose>
-        <collision name='handle_front_collision'>
+      <link name="handle_front">
+        <pose>-0.75 0.090 1.050 0 0 0</pose>
+
+        <collision name="handle_front_bar_collision">
+          <pose>0 0 0 0 1.5707963 0</pose>
           <geometry>
-            <cylinder>
-              <radius>0.012</radius>
-              <length>-0.12</length>
-            </cylinder>
+            <cylinder><radius>0.012</radius><length>0.16</length></cylinder>
           </geometry>
-          <max_contacts>10</max_contacts>
-          <surface>
-            <contact>
-              <ode/>
-            </contact>
-            <bounce/>
-            <friction>
-              <torsional>
-                <ode/>
-              </torsional>
-              <ode/>
-            </friction>
-          </surface>
         </collision>
-        <visual name='handle_front_visual'>
+        <collision name="handle_front_stem_collision">
+          <pose>-0.065 -0.030 0 1.5707963 0 0</pose>
           <geometry>
-            <cylinder>
-              <radius>0.012</radius>
-              <length>-0.12</length>
-            </cylinder>
+            <cylinder><radius>0.010</radius><length>0.06</length></cylinder>
+          </geometry>
+        </collision>
+        <visual name="handle_front_bar_visual">
+          <pose>0 0 0 0 1.5707963 0</pose>
+          <geometry>
+            <cylinder><radius>0.012</radius><length>0.16</length></cylinder>
           </geometry>
         </visual>
+        <visual name="handle_front_stem_visual">
+          <pose>-0.065 -0.030 0 1.5707963 0 0</pose>
+          <geometry>
+            <cylinder><radius>0.010</radius><length>0.06</length></cylinder>
+          </geometry>
+        </visual>
+
         <inertial>
           <mass>0.5</mass>
           <inertia>
-            <ixx>0.001</ixx>
-            <iyy>0.001</iyy>
-            <izz>0.001</izz>
-            <ixy>0</ixy>
-            <ixz>0</ixz>
-            <iyz>0</iyz>
+            <ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
           </inertia>
         </inertial>
-        <self_collide>0</self_collide>
-        <enable_wind>0</enable_wind>
-        <kinematic>0</kinematic>
       </link>
       <joint name='handle_front_fixed' type='fixed'>
         <parent>door_panel</parent>
         <child>handle_front</child>
       </joint>
-      <link name='handle_back'>
-        <pose frame=''>-0.75 -0.045 1.05 3.14159 1.57079 3.14159</pose>
-        <collision name='handle_back_collision'>
+      <link name="handle_back">
+        <pose>-0.75 -0.090 1.050 0 0 0</pose>
+
+        <collision name="handle_back_bar_collision">
+          <pose>0 0 0 0 1.5707963 0</pose>
           <geometry>
-            <cylinder>
-              <radius>0.012</radius>
-              <length>-0.12</length>
-            </cylinder>
+            <cylinder><radius>0.012</radius><length>0.16</length></cylinder>
           </geometry>
-          <max_contacts>10</max_contacts>
-          <surface>
-            <contact>
-              <ode/>
-            </contact>
-            <bounce/>
-            <friction>
-              <torsional>
-                <ode/>
-              </torsional>
-              <ode/>
-            </friction>
-          </surface>
         </collision>
-        <visual name='handle_back_visual'>
+        <collision name="handle_back_stem_collision">
+          <pose>-0.065 0.030 0 1.5707963 0 0</pose>
           <geometry>
-            <cylinder>
-              <radius>0.012</radius>
-              <length>-0.12</length>
-            </cylinder>
+            <cylinder><radius>0.010</radius><length>0.06</length></cylinder>
+          </geometry>
+        </collision>
+        <visual name="handle_back_bar_visual">
+          <pose>0 0 0 0 1.5707963 0</pose>
+          <geometry>
+            <cylinder><radius>0.012</radius><length>0.16</length></cylinder>
           </geometry>
         </visual>
+        <visual name="handle_back_stem_visual">
+          <pose>-0.065 0.030 0 1.5707963 0 0</pose>
+          <geometry>
+            <cylinder><radius>0.010</radius><length>0.06</length></cylinder>
+          </geometry>
+        </visual>
+
         <inertial>
           <mass>0.5</mass>
           <inertia>
-            <ixx>0.001</ixx>
-            <iyy>0.001</iyy>
-            <izz>0.001</izz>
-            <ixy>0</ixy>
-            <ixz>0</ixz>
-            <iyz>0</iyz>
+            <ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
           </inertia>
         </inertial>
-        <self_collide>0</self_collide>
-        <enable_wind>0</enable_wind>
-        <kinematic>0</kinematic>
       </link>
       <joint name='handle_back_fixed' type='fixed'>
         <parent>door_panel</parent>

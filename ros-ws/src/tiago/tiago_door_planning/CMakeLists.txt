@@ -18,9 +18,8 @@ catkin_python_setup()
 
 add_action_files(
   FILES
-    PlanDoorOpening.action
-    ExecuteDoorOpening.action
     ExecuteDoorSegment.action
+    OpenDoor.action
 )
 
 generate_messages(
@@ -39,12 +38,9 @@ catkin_package(
 )
 
 catkin_install_python(PROGRAMS
-  scripts/door_planning_server.py
-  scripts/door_execution_server.py
-  scripts/test_door_opening.py
-  scripts/check_kinematics.py
   scripts/door_tracking_server.py
-  scripts/run_test_pull.py
+  scripts/door_opening_server.py
+  scripts/run_open_door.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

@@ -102,19 +102,32 @@
     <!-- Handles (both sides)  -->
     <!-- ===================== -->
 
-    <!-- Front handle -->
+    <!-- Front lever handle: bar 6 cm off the door face, stem at the latch end -->
     <link name="handle_front">
-      <pose>0.75 0.045 1.050 0 1.5707963 0</pose>
+      <pose>0.75 0.090 1.050 0 0 0</pose>
 
-      <collision name="handle_front_collision">
+      <collision name="handle_front_bar_collision">
+        <pose>0 0 0 0 1.5707963 0</pose>
         <geometry>
-          <cylinder><radius>0.012</radius><length>0.12</length></cylinder>
+          <cylinder><radius>0.012</radius><length>0.16</length></cylinder>
         </geometry>
       </collision>
-
-      <visual name="handle_front_visual">
+      <collision name="handle_front_stem_collision">
+        <pose>0.065 -0.030 0 1.5707963 0 0</pose>
         <geometry>
-          <cylinder><radius>0.012</radius><length>0.12</length></cylinder>
+          <cylinder><radius>0.010</radius><length>0.06</length></cylinder>
+        </geometry>
+      </collision>
+      <visual name="handle_front_bar_visual">
+        <pose>0 0 0 0 1.5707963 0</pose>
+        <geometry>
+          <cylinder><radius>0.012</radius><length>0.16</length></cylinder>
+        </geometry>
+      </visual>
+      <visual name="handle_front_stem_visual">
+        <pose>0.065 -0.030 0 1.5707963 0 0</pose>
+        <geometry>
+          <cylinder><radius>0.010</radius><length>0.06</length></cylinder>
         </geometry>
       </visual>
 
@@ -134,17 +147,30 @@
 
     <!-- Back handle -->
     <link name="handle_back">
-      <pose>0.75 -0.045 1.050 0 1.5707963 0</pose>
+      <pose>0.75 -0.090 1.050 0 0 0</pose>
 
-      <collision name="handle_back_collision">
+      <collision name="handle_back_bar_collision">
+        <pose>0 0 0 0 1.5707963 0</pose>
         <geometry>
-          <cylinder><radius>0.012</radius><length>0.12</length></cylinder>
+          <cylinder><radius>0.012</radius><length>0.16</length></cylinder>
         </geometry>
       </collision>
-
-      <visual name="handle_back_visual">
+      <collision name="handle_back_stem_collision">
+        <pose>0.065 0.030 0 1.5707963 0 0</pose>
         <geometry>
-          <cylinder><radius>0.012</radius><length>0.12</length></cylinder>
+          <cylinder><radius>0.010</radius><length>0.06</length></cylinder>
+        </geometry>
+      </collision>
+      <visual name="handle_back_bar_visual">
+        <pose>0 0 0 0 1.5707963 0</pose>
+        <geometry>
+          <cylinder><radius>0.012</radius><length>0.16</length></cylinder>
+        </geometry>
+      </visual>
+      <visual name="handle_back_stem_visual">
+        <pose>0.065 0.030 0 1.5707963 0 0</pose>
+        <geometry>
+          <cylinder><radius>0.010</radius><length>0.06</length></cylinder>
         </geometry>
       </visual>
 

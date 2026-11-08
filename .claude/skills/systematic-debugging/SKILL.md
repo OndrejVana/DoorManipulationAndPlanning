@@ -11,8 +11,8 @@ description: >-
    recorded bag (`ros-ws/src/tiago/record_bag.sh`, `tiago_door_bringup/launch/replay.launch`) or the sim.
 2. Gather evidence: node logs (`~/.ros/log`), `rostopic echo/hz`, `rosrun tf tf_echo`, `rosnode info`,
    planner logs (`tiago_door_planning/planner_logs.py`), offline visualisers in `tiago_door_planning/scripts/`.
-3. Narrow the failing layer: perception (tag → hinge/handle poses) → navigation → planning (lattice search,
-   reachability, IK) → execution (base PID, arm trajectory). Separate code defects from environment causes:
+3. Narrow the failing layer: perception (tag → hinge/handle poses) → navigation → planning (door scene, A*,
+   IK) → execution (grasp, base/arm tracking, regrasp). Separate code defects from environment causes:
    clock skew robot/laptop, `ROS_IP`/`ROS_MASTER_URI`, py2 vs py3 module shadowing in the overlay chain.
 4. Form one concrete hypothesis with a prediction that could disprove it; test the cheapest probe first.
 5. Discard disproved hypotheses and remove their temporary instrumentation before the next one.

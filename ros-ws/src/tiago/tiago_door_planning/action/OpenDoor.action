@@ -1,0 +1,10 @@
+geometry_msgs/PoseStamped hinge_pose
+geometry_msgs/PoseStamped handle_pose
+string hinge_side
+bool push
+---
+bool success
+float64 final_door_angle
+string message
+---
+string stage

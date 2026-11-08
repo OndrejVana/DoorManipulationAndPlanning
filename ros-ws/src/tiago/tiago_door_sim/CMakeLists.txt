@@ -12,6 +12,7 @@ catkin_package()
 
 catkin_install_python(PROGRAMS
   scripts/tuck_arm.py
+  scripts/spawn_without_safety_box.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

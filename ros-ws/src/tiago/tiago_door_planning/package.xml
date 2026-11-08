@@ -38,14 +38,6 @@
 
   <!-- TF -->
   <exec_depend>tf2_ros</exec_depend>
-  <exec_depend>tf2_geometry_msgs</exec_depend>
-
-  <!-- MoveIt python -->
-  <exec_depend>moveit_commander</exec_depend>
-  <exec_depend>moveit_msgs</exec_depend>
-
-  <!-- Optional for costmap grid -->
-  <exec_depend>map_msgs</exec_depend>
 
   <!-- Python 3.6 -->
   <exec_depend>rospy</exec_depend>

@@ -89,7 +89,7 @@
 
   <!-- Spawn Tiago++ (dual-arm) -->
   <group if="$(eval arg('robot') == 'tiago++')">
-    <include file="$(find tiago_dual_gazebo)/launch/tiago_dual_spawn.launch">
+    <include file="$(find tiago_door_sim)/launch/tiago_dual_spawn.launch">
       <arg name="arm_left" value="true"/>
       <arg name="arm_right" value="true"/>
       <arg name="end_effector_left" value="$(arg end_effector_left)"/>

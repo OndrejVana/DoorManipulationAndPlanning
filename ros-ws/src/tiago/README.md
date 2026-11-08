@@ -11,7 +11,7 @@ ros-ws/src/tiago/
 ├── tiago_door_localization/   # AprilTag-based door perception and doorway pose estimation
 ├── tiago_move_base_control/   # move_base wrapper and door approach goal generator
 ├── tiago_door_bt/             # py_trees behavior tree executive
-├── tiago_door_planning/       # Action server for base/arm door-opening trajectory planning
+├── tiago_door_planning/       # Door opening: grasp, whole-body A* plan, closed-loop tracking, regrasp
 ├── tiago_arm_manipulation/    # MoveIt arm motion planning and gripper control
 ├── tiago_slam/                # SLAM implementations (slam_toolbox, RTAB-Map, ORB-SLAM2/3)
 └── tiago_vicon/               # VICON bridge, position logger, path record/replay
@@ -41,7 +41,7 @@ tiago_slam              -> Map + localization (laser/visual SLAM)
 tiago_door_localization -> AprilTag → hinge/handle/doorway poses
 tiago_move_base_control -> Door approach goal → move_base navigation
 tiago_door_bt           -> Behavior tree: perception → navigate → prep → freeze
-tiago_door_planning     -> Action server: base path + arm trajectory for door opening
+tiago_door_planning     -> open_door action: grasp, plan, track and regrasp the door
 tiago_arm_manipulation  -> MoveIt services: move_to_pose, door_pregrasp, gripper
 tiago_vicon             -> Ground truth (VICON) + position logging + path replay
 tiago_door_bringup      -> Orchestrates all of the above via main.launch
@@ -65,7 +65,7 @@ tiago_door_bringup      -> Orchestrates all of the above via main.launch
 - [tiago_door_localization](tiago_door_localization/README.md) — AprilTag perception pipeline
 - [tiago_move_base_control](tiago_move_base_control/README.md) — navigation nodes
 - [tiago_door_bt](tiago_door_bt/README.md) — behavior tree description
-- [tiago_door_planning](tiago_door_planning/README.md) — planning action server
+- [tiago_door_planning](tiago_door_planning/README.md) — door opening action servers
 - [tiago_arm_manipulation](tiago_arm_manipulation/README.md) — arm + gripper services
 - [tiago_door_sim](tiago_door_sim/README.md) — Gazebo simulation setup
 - [tiago_vicon](tiago_vicon/README.md) — VICON bridge and position logging

@@ -22,7 +22,7 @@ description: Write Python 3.6 ROS Melodic nodes, library code and tests in this 
 ## Design
 
 - Keep ROS I/O (params, pubs/subs, actions, TF) at the node boundary; pass plain values/messages into logic
-  modules (pattern: `tiago_door_planning/src/tiago_door_planning/*` used by `scripts/door_planning_server.py`).
+  modules (pattern: `tiago_door_planning/src/tiago_door_planning/*` used by `scripts/door_opening_server.py`).
 - Catch specific exceptions (`tf2_ros.LookupException`, ...) where they can be handled; log and fail the action.
 
 ## Testing

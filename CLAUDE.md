@@ -7,8 +7,8 @@ TIAGo++ autonomous door opening. ROS 1 Melodic catkin workspace; project nodes r
 - `ros-ws/docker/`: dev image (Dockerfile, compose, entrypoint, Makefile), PAL `.rosinstall`.
 - `ros-ws/src/tiago/<package>/`: project catkin packages; [package overview](ros-ws/src/tiago/README.md).
   - `tiago_door_bringup`: `main.launch` entry point; component flags (`use_slam`, `use_navigation`, ...).
-  - `tiago_door_planning`: planning/execution action servers; library in `src/tiago_door_planning/`, tests in
-    `tests/`, offline reachability maps in `maps/*.npz`, tuning/visualisation scripts in `scripts/`.
+  - `tiago_door_planning`: `open_door` + `execute_door_segment` action servers; library in `src/tiago_door_planning/`
+    (pinocchio kinematics, A* planner, tracking), tests in `tests/`, parameters in `config/door_motion.yaml`.
   - `tiago_door_bt` (py_trees), `tiago_door_localization` (AprilTag), `tiago_arm_manipulation` (MoveIt),
     `tiago_move_base_control` (move_base + C++ `DoorMaskLayer` costmap plugin), `tiago_door_sim` (Gazebo),
     `tiago_slam`, `tiago_vicon`.
