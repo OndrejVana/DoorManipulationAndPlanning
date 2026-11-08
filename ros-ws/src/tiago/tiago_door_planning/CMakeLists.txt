@@ -41,12 +41,13 @@ catkin_install_python(PROGRAMS
   scripts/door_tracking_server.py
   scripts/door_opening_server.py
   scripts/run_open_door.py
+  scripts/door_plan_viz.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
 install(DIRECTORY src/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_PYTHON_DESTINATION}
 )
-install(DIRECTORY launch config action
+install(DIRECTORY launch config action rviz
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )

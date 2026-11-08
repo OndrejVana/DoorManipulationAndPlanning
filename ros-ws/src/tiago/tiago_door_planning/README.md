@@ -25,10 +25,13 @@ tiago_door_planning/
 ├── launch/
 │   ├── door_opening.launch        # Tracking server + opening server
 │   └── door_tracking.launch       # Tracking server only
+├── rviz/
+│   └── door_opening.rviz          # Door plan markers, laser, door poses
 ├── scripts/
 │   ├── door_opening_server.py     # open_door action server
 │   ├── door_tracking_server.py    # execute_door_segment action server (50 Hz whole-body or base-only tracking)
-│   └── run_open_door.py           # Sends the perceived door to open_door and logs the result
+│   ├── run_open_door.py           # Sends the perceived door to open_door and logs the result
+│   └── door_plan_viz.py           # RViz markers: walls, believed and segment-end leaf, planned paths, stage
 ├── src/tiago_door_planning/
 │   ├── model/                     # What the robot and the door are
 │   │   ├── geometry.py            # SE(2)/SE(3) helpers, box distances
@@ -132,12 +135,15 @@ the hinge axis on the swing-side face of the leaf and mirrors the back handle th
 # from ros-ws/docker
 make build
 make shell
-roslaunch tiago_door_planning door_opening.launch
+roslaunch tiago_door_planning door_opening.launch  # rviz:=true to watch the plan
 rosrun tiago_door_planning run_open_door.py _push:=false
 ```
 
 `run_open_door.py` reads `/door/hinge_pose_map`, `/door/handle_pose_map` and `/door/hinge_side` (published by
 `tiago_door_localization`). `main.launch use_door_planning:=true` starts the same servers.
+
+With `rviz:=true` the planned base paths are green while the hand holds the handle and blue while it drives
+released; the orange leaf is the door angle the tracker believes, the faint leaf where the current segment ends.
 
 ---
 

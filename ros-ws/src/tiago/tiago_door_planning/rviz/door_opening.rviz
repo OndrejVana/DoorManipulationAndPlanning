@@ -1,0 +1,79 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+  - Class: rviz/Views
+    Name: Views
+Toolbars:
+  toolButtonStyle: 2
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz/Grid
+      Name: Grid
+      Enabled: true
+      Value: true
+      Cell Size: 0.5
+      Plane Cell Count: 20
+    - Class: rviz/RobotModel
+      Name: RobotModel
+      Enabled: true
+      Value: true
+      Robot Description: robot_description
+    - Class: rviz/LaserScan
+      Name: Laser
+      Enabled: true
+      Value: true
+      Topic: /scan_raw
+      Size (m): 0.04
+      Style: Flat Squares
+      Color Transformer: FlatColor
+      Color: 255; 60; 60
+      Decay Time: 0
+    - Class: rviz/Pose
+      Name: Hinge pose
+      Enabled: true
+      Value: true
+      Topic: /door/hinge_pose_map
+      Shape: Axes
+      Axes Length: 0.3
+      Axes Radius: 0.02
+    - Class: rviz/Pose
+      Name: Handle pose
+      Enabled: true
+      Value: true
+      Topic: /door/handle_pose_map
+      Shape: Axes
+      Axes Length: 0.2
+      Axes Radius: 0.015
+    - Class: rviz/MarkerArray
+      Name: Door plan
+      Enabled: true
+      Value: true
+      Marker Topic: /door_plan_viz/markers
+  Global Options:
+    Fixed Frame: map
+    Background Color: 40; 42; 48
+    Frame Rate: 30
+  Tools:
+    - Class: rviz/Interact
+      Hide Inactive Objects: true
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+  Value: true
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 6.5
+      Focal Point:
+        X: 0.0
+        Y: -1.0
+        Z: 0.0
+      Pitch: 1.1
+      Yaw: 3.9
+      Target Frame: <Fixed Frame>
+    Saved: ~
+Window Geometry:
+  Width: 1280
+  Height: 860

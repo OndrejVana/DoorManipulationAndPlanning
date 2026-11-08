@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
   <arg name="config" default="$(find tiago_door_planning)/config/door_motion.yaml"/>
+  <arg name="rviz" default="false" doc="RViz with the door plan, laser and door poses"/>
 
   <node pkg="tiago_door_planning" type="door_tracking_server.py" name="door_tracking_server" output="screen">
     <rosparam command="load" file="$(arg config)"/>
@@ -9,4 +10,11 @@
   <node pkg="tiago_door_planning" type="door_opening_server.py" name="door_opening_server" output="screen">
     <rosparam command="load" file="$(arg config)"/>
   </node>
+
+  <group if="$(arg rviz)">
+    <node pkg="tiago_door_planning" type="door_plan_viz.py" name="door_plan_viz">
+      <rosparam command="load" file="$(arg config)"/>
+    </node>
+    <node pkg="rviz" type="rviz" name="door_opening_rviz" args="-d $(find tiago_door_planning)/rviz/door_opening.rviz"/>
+  </group>
 </launch>
