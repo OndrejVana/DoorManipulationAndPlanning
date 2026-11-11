@@ -33,15 +33,30 @@ def resample(times, values, sample_times):
     return np.array([np.interp(sample_times, times, values[:, i]) for i in range(values.shape[1])]).T
 
 
-def resample_segment(start_pose, start_angle, steps):
+def uniform_times(duration):
+    times = np.arange(0.0, duration + 1e-9, SAMPLE_PERIOD)
+    return times if times[-1] >= duration - 1e-9 else np.append(times, duration)
+
+
+def ramped_times(duration, ramp):
+    """Plan times at evenly spaced samples of a motion slowed linearly to a stop over its last ramp seconds, which
+    then take twice as long."""
+    ramp = min(ramp, duration)
+    if ramp <= 0.0:
+        return uniform_times(duration)
+    start = duration - ramp
+    times = uniform_times(duration + ramp)
+    into_ramp = np.maximum(times - start, 0.0)
+    return np.minimum(times, start) + into_ramp - into_ramp**2 / (4.0 * ramp)
+
+
+def resample_segment(start_pose, start_angle, steps, ramp=0.0):
     times, poses, angles = timed_samples(steps)
     times = np.concatenate([[0.0], times])
     poses = np.vstack([start_pose, poses])
     poses[:, 2] = np.unwrap(poses[:, 2])
     angles = np.concatenate([[start_angle], angles])
-    sample_times = np.arange(0.0, times[-1] + 1e-9, SAMPLE_PERIOD)
-    if sample_times[-1] < times[-1] - 1e-9:
-        sample_times = np.append(sample_times, times[-1])
+    sample_times = ramped_times(times[-1], ramp)
     sampled_poses = resample(times, poses, sample_times)
     sampled_poses[:, 2] = [wrap_angle(yaw) for yaw in sampled_poses[:, 2]]
     return sampled_poses, np.interp(sample_times, times, angles), sample_times
@@ -61,10 +76,12 @@ def is_regrasp(step):
     return len(step.poses) == 1
 
 
-def plan_to_segments(steps):
+def plan_to_segments(steps, drive_ramp=0.0, held_ramp=0.0):
     """One segment per run of motion steps; release and grasp happen between segments.
 
-    A released segment's grip is the one that let go.
+    A released segment's grip is the one that let go; its drive slows to a stop over its last drive_ramp seconds, so
+    the base ends where it was planned to rather than lagging behind a reference that stopped at full speed. A held
+    segment slows down over its last held_ramp seconds, so a door the hand cannot brake does not swing on far.
     """
     segments = []
     previous = steps[0]
@@ -75,7 +92,10 @@ def plan_to_segments(steps):
             previous = regrasps[0]
         if motion:
             poses, angles, sample_times = resample_segment(
-                previous.poses[-1], previous.angles[-1], motion
+                previous.poses[-1],
+                previous.angles[-1],
+                motion,
+                held_ramp if grasped else drive_ramp,
             )
             arm_qs = resample_arm(np.array(previous.q), motion, sample_times)
             grip = run[-1].grip

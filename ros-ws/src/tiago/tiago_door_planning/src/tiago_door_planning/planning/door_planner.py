@@ -42,13 +42,16 @@ DRIVE_HEURISTIC_WEIGHT = 2.0
 SPOT_TURN = np.pi / 8.0
 ONTO_SPOT_TICK = 0.1
 SPOT_SIDESTEP = 0.02
+QUICK_ONTO_SPOT_S = 1.5
 
 
 class Planner(object):
-    def __init__(self, problem, params, grasp_spots=None, drive_distance=None):
+    def __init__(self, problem, params, grasp_spots=None, drive_distance=None, regrasp_in_place=True):
         """With grasp_spots, base poses a released robot can grasp from, the planner only drives (plan_to_spot);
-        drive_distance(xy), a lower bound on the distance to drive to a spot, steers it."""
+        drive_distance(xy), a lower bound on the distance to drive to a spot, steers it. Without regrasp_in_place a
+        held search never releases the handle."""
         self.problem = problem
+        self.regrasp_in_place = regrasp_in_place
         self.params = params
         self.grasp_spots = grasp_spots
         self.drive_distance = drive_distance
@@ -210,6 +213,8 @@ class Planner(object):
         angle = self.door_angle(state.door)
         half_time = self.params.regrasp_time / 2.0
         if state.grasped:
+            if not self.regrasp_in_place:
+                return []
             return [(state._replace(grasped=False), half_time, EdgeData(q, [pose], [angle], half_time))]
         if self.grasp_spots is not None:
             return []
@@ -260,13 +265,15 @@ class Planner(object):
         near = (distance <= SPOT_RADIUS + 1e-9) & (turn <= SPOT_TURN + 1e-9)
         return self.grasp_spots[near][np.argsort(distance[near])]
 
-    def _onto_spot(self, pose, angle, grip):
-        """A clear step from a pose onto a grasp spot next to it, or None."""
+    def _onto_spot(self, pose, angle, grip, max_duration=np.inf):
+        """The quickest clear step, of at most max_duration, from a pose onto a grasp spot next to it, or None."""
+        best = None
         for spot in self._spots_in_reach(pose):
             for poses, duration in self._steps_onto(pose, spot):
-                if all(self.is_clear(p, angle, self.problem.free_q, False, grip) for p in poses):
-                    return PathStep(poses, [angle] * len(poses), duration, False, None, grip)
-        return None
+                quicker = duration <= max_duration and (best is None or duration < best.duration)
+                if quicker and all(self.is_clear(p, angle, self.problem.free_q, False, grip) for p in poses):
+                    best = PathStep(poses, [angle] * len(poses), duration, False, None, grip)
+        return best
 
     def _steps_onto(self, pose, spot):
         """(poses, duration) of the ways onto a spot: turn, drive straight and turn, sampled one tick apart so the
@@ -283,15 +290,25 @@ class Planner(object):
             steps.append(([pose + fraction * change for fraction in fractions], glide))
         return steps
 
-    def _state_onto_spot(self, state):
+    def _state_onto_spot(self, state, max_duration):
         pose = self.lattice_to_world(self.state_lattice_pose(state))
-        return self._onto_spot(pose, self.door_angle(state.door), state.grip)
+        return self._onto_spot(pose, self.door_angle(state.door), state.grip, max_duration)
 
     def plan_to_spot(self):
         """PathSteps that drive a released robot exactly onto one of the grasp spots, or None. The drive only needs
-        to be short, not shortest, so its heuristic is inflated by DRIVE_HEURISTIC_WEIGHT."""
-        steps = self._search(lambda state: self._state_onto_spot(state) is not None, None, None, DRIVE_HEURISTIC_WEIGHT)
+        to be short, not shortest, so its heuristic is inflated by DRIVE_HEURISTIC_WEIGHT. The search's cost leaves
+        out the last step onto the spot, so a quick one is sought first."""
+        for max_duration in (QUICK_ONTO_SPOT_S, np.inf):
+            steps = self._drive_to_spot(max_duration)
+            if steps is not None:
+                return steps
+        return None
+
+    def _drive_to_spot(self, max_duration):
+        steps = self._search(lambda state: self._state_onto_spot(state, max_duration) is not None, None, None,
+                             DRIVE_HEURISTIC_WEIGHT)
         if steps is None:
             return None
         last = steps[-1]
-        return steps + [self._onto_spot(last.poses[-1], last.angles[-1], last.grip)._replace(q=last.q)]
+        onto = self._onto_spot(last.poses[-1], last.angles[-1], last.grip, max_duration)
+        return steps + [onto._replace(q=last.q)]

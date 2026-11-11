@@ -21,6 +21,8 @@ GOAL = GoalParams(
     heading_bins=8,
     extension_expansions=300,
     regrasp_searches=2,
+    spot_regrasps_first=True,
+    max_sweep=np.pi,
     workers=1,
 )
 

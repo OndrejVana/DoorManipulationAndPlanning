@@ -9,7 +9,7 @@ from sensor_msgs.msg import LaserScan
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 from tiago_door_planning.model.door_scene import scene_from_door_poses
-from tiago_door_planning.sensing.door_sensing import door_estimate, hand_off_door
+from tiago_door_planning.sensing.door_sensing import door_estimate, hand_off_door, unseen_leaf_bound
 from tiago_door_planning.model.geometry import matrix_to_pose2d, pose2d_to_matrix
 from tiago_door_planning.model.kinematics import (
     arm_joint_names,
@@ -19,7 +19,7 @@ from tiago_door_planning.model.kinematics import (
     joint_limits,
     velocity_limits,
 )
-from tiago_door_planning.ros.config import door_dimensions
+from tiago_door_planning.ros.config import apply_pipeline_speed, door_dimensions
 from tiago_door_planning.msg import (
     ExecuteDoorSegmentAction,
     ExecuteDoorSegmentFeedback,
@@ -78,7 +78,7 @@ def rounded(values, digits):
 
 class DoorTrackingServer(object):
     def __init__(self):
-        self._config = rospy.get_param("~")
+        self._config = apply_pipeline_speed(rospy.get_param("~"))
         self._tracking = self._config["tracking"]
         self._robot = Robot(self._config)
         self._cmd_vel = rospy.Publisher(
@@ -224,7 +224,7 @@ class DoorTrackingServer(object):
         if grasp_offset is None:
             return base_tracking_step(trajectory, progress, measurement, gains, dt)
         reading = self._door_from_scan()
-        at_least = None if reading is None else reading.at_least
+        at_least = None if reading is None else unseen_leaf_bound(reading)
         return tracking_step(
             trajectory,
             progress,

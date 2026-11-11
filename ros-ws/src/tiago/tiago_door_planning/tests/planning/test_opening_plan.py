@@ -38,6 +38,8 @@ GOAL = GoalParams(
     heading_bins=8,
     extension_expansions=300,
     regrasp_searches=2,
+    spot_regrasps_first=True,
+    max_sweep=np.pi,
     workers=1,
 )
 
@@ -139,4 +141,24 @@ def test_released_robot_drives_to_a_grasp_and_opens():
     steps, (minimum, _) = plan_opening(problem, PARAMS, GOAL)
 
     assert not steps[0].grasped
+    assert final_angle(steps) >= minimum - 1e-9
+
+
+def grasp_sweeps(steps):
+    sweeps, start = [], None
+    for step in steps:
+        if not step.grasped:
+            start = None
+            continue
+        start = step.angles[0] if start is None else start
+        sweeps.append(step.angles[-1] - start)
+    return sweeps
+
+
+def test_no_grasp_opens_the_door_further_than_the_executor_sweeps():
+    max_sweep = np.radians(25.0)
+
+    steps, (minimum, _) = plan_opening(make_problem(), PARAMS, GOAL._replace(max_sweep=max_sweep, regrasp_searches=4))
+
+    assert max(grasp_sweeps(steps)) <= max_sweep + 1e-9
     assert final_angle(steps) >= minimum - 1e-9

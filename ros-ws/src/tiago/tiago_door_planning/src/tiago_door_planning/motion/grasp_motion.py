@@ -125,10 +125,16 @@ def joint_path(q_start, q_end, max_step):
     return [q_start + (q_end - q_start) * t for t in np.linspace(0.0, 1.0, count)]
 
 
-def path_duration(qs, speed, min_duration):
-    """Time for the joint that travels furthest along the path to go at speed."""
-    travel = np.sum(np.abs(np.diff(np.asarray(qs), axis=0)), axis=0)
-    return max(min_duration, float(np.max(travel)) / speed)
+def waypoint_times(qs, speeds, min_duration):
+    """Arrival time at each of qs[1:], every step as quick as its slowest joint allows at speeds (one value, one per
+    joint, or one row per step); a path quicker than min_duration is stretched to it."""
+    steps = np.abs(np.diff(np.asarray(qs, dtype=float), axis=0)) / speeds
+    times = np.cumsum(np.max(steps, axis=1))
+    if times[-1] >= min_duration:
+        return times
+    if times[-1] <= 0.0:
+        return min_duration * np.arange(1, len(times) + 1) / len(times)
+    return times * min_duration / times[-1]
 
 
 def via_path(qs, max_step):

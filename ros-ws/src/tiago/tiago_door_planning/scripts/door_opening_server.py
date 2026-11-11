@@ -41,8 +41,17 @@ from tiago_door_planning.planning.grips import (
     plan_cost,
     segment_grip,
 )
-from tiago_door_planning.model.kinematics import gripper_pose, link_spheres
-from tiago_door_planning.ros.config import collision_params, goal_params, planner_params
+from tiago_door_planning.model.kinematics import (
+    gripper_pose,
+    link_spheres,
+    velocity_limits,
+)
+from tiago_door_planning.ros.config import (
+    apply_pipeline_speed,
+    collision_params,
+    goal_params,
+    planner_params,
+)
 from tiago_door_planning.msg import (
     ExecuteDoorSegmentAction,
     ExecuteDoorSegmentGoal,
@@ -131,7 +140,7 @@ def segment_goal(goal, scene, trajectory, grasped):
 
 class DoorOpeningServer(object):
     def __init__(self):
-        self._config = config = rospy.get_param("~")
+        self._config = config = apply_pipeline_speed(rospy.get_param("~"))
         self._grasp_config = config["grasp"]
         self._collision = collision_params(config)
         self._move_collision = self._collision._replace(
@@ -187,12 +196,22 @@ class DoorOpeningServer(object):
         self._set_up_door()
         plan = self._choose_plan()
         grip = self._last_grip = segment_grip(plan.segments[0])
-        self._stage("grasp 1 with the %s arm" % grip.arm)
-        self._grasp(
-            grip.arm, plan.move, plan.approach, grasp_action(self._push, grip.face)
-        )
-        self._measure_door(self._scenes["front"], self._offsets[grip])
+        if self._starts_released(plan):
+            self._released_q = plan.approach[-1]
+        else:
+            self._stage("grasp 1 with the %s arm" % grip.arm)
+            self._grasp(
+                grip.arm, plan.move, plan.approach, grasp_action(self._push, grip.face)
+            )
+            self._measure_door(self._scenes["front"], self._offsets[grip])
         self._open_with_recoveries(plan.segments)
+
+    def _starts_released(self, plan):
+        """A plan that lets go of the handle before moving the door needs no first grasp; the robot drives first."""
+        return (
+            self._grasp_config["skip_unused_first_grasp"]
+            and not plan.segments[0].grasped
+        )
 
     def _set_up_door(self):
         goal = self._goal
@@ -230,6 +249,7 @@ class DoorOpeningServer(object):
                 )
                 return
             except SegmentFailed as error:
+                self._door_seen_moved(self._scenes["front"])
                 if self._passable():
                     rospy.logwarn(
                         "[DoorOpening] %s; the door is open wide enough to pass", error
@@ -319,7 +339,7 @@ class DoorOpeningServer(object):
         started = rospy.get_time()
         steps, self._goals = plan_opening(
             problem,
-            planner_params(self._config),
+            planner_params(self._config, self._push),
             goal_params(self._config),
             self._goals,
         )
@@ -331,7 +351,9 @@ class DoorOpeningServer(object):
             raise OpeningFailed(
                 "no opening plan to %.0f deg" % np.degrees(self._passable_angle)
             )
-        return plan_to_segments(steps)
+        planner = self._config["planner"]
+        held_ramp = planner["push_release_ramp_s"] if self._push else 0.0
+        return plan_to_segments(steps, planner["drive_ramp_s"], held_ramp)
 
     def _plan_grasp(self, scene, grip, planned_q):
         """The arm unfolds from where it is parked folded through grasp/unfold_q, since unfolding straight to the
@@ -384,7 +406,7 @@ class DoorOpeningServer(object):
                 self._stop_if_passable()
                 progress = self._require_progress(progress)
                 self._let_go(self._scenes["front"], segment.trajectory.side)
-                if self._door_moved_since_release(self._scenes["front"]):
+                if self._door_seen_moved(self._scenes["front"]):
                     self._stop_if_passable()
                     segments = self._replan_released([segment] + segments)
                     continue
@@ -434,16 +456,16 @@ class DoorOpeningServer(object):
             self._release(scene)
         self._park(scene, side)
 
-    def _door_moved_since_release(self, scene):
-        """A push grasp cannot brake the door, so it swings on after the hand lets go; the laser tells where it
-        stopped."""
+    def _door_seen_moved(self, scene):
+        """The laser seeing the door away from where the hand last had it moves the door there: a push grasp cannot
+        brake the door, so it swings on after the hand lets go, and a segment may fail with the door already open."""
         tolerance = np.radians(self._grasp_config["door_agreement_deg"])
         reading = self._door_reading(scene)
         angle = door_estimate(self._door_angle, reading, tolerance)
         if angle == self._door_angle:
             return False
         rospy.loginfo(
-            "[DoorOpening] the door swung on to %.1f deg after the release (laser %s)",
+            "[DoorOpening] the laser sees the door at %.1f deg (laser %s)",
             np.degrees(angle),
             describe_reading(reading),
         )
@@ -555,10 +577,13 @@ class DoorOpeningServer(object):
         """The hand opens on the way to the handle."""
         grasp = self._grasp_config
         self._robot.move_hand(side, grasp["hand_open"], wait=False)
-        self._robot.move_arm(side, move[1:], grasp["move_speed"])
+        self._robot.move_arm(side, move[1:], self._joint_speeds(side, grasp["move_speed"]))
         self._robot.wait_for_hand(side)
         self._robot.move_arm(
-            side, approach, grasp["approach_speed"], grasp["contact_tolerance"]
+            side,
+            approach,
+            self._joint_speeds(side, grasp["approach_speed"]),
+            grasp["contact_tolerance"],
         )
         self._robot.move_hand(side, grasp["hand_closed"])
         self._approach = list(approach)
@@ -619,7 +644,9 @@ class DoorOpeningServer(object):
             if path is not None and path_leaves_clear(
                 self._arms[side], around, path, self._move_collision
             ):
-                self._robot.move_arm(side, path[1:], grasp["approach_speed"])
+                self._robot.move_arm(
+                    side, path[1:], self._joint_speeds(side, grasp["approach_speed"])
+                )
                 return
             rospy.loginfo(
                 "[DoorOpening] release by %s: %s",
@@ -639,14 +666,20 @@ class DoorOpeningServer(object):
             <= self._grasp_config["home_tolerance"]
         ):
             return
-        mode = FREE if self._back_away(scene, side) else GRASP
+        back_away = self._back_away_path(scene, side)
         try:
-            self._move_arm_to(scene, side, [home], mode)
+            if back_away is None:
+                self._move_arm_to(scene, side, [home], GRASP)
+            else:
+                self._move_arm_to(scene, side, [home], FREE, back_away)
         except SegmentFailed:
+            if back_away is not None:
+                speeds = self._joint_speeds(side, self._grasp_config["approach_speed"])
+                self._robot.move_arm(side, back_away[1:], speeds)
             self._step_away_from_leaf(scene, side)
             self._move_arm_to(scene, side, [home], GRASP)
 
-    def _back_away(self, scene, side):
+    def _back_away_path(self, scene, side):
         grasp = self._grasp_config
         displacement = retreat_displacement(
             scene, self._door_angle, self._base_pose(), grasp["standoff"]
@@ -659,18 +692,28 @@ class DoorOpeningServer(object):
             grasp["ik_iterations"],
         )
         if path is None or not self._path_clear(scene, side, path, GRASP):
-            return False
-        self._robot.move_arm(side, path[1:], grasp["approach_speed"])
-        return True
+            return None
+        return path
 
     def _step_away_from_leaf(self, scene, side):
-        """A base pressed against the leaf drives straight away from it, forwards or backwards, so the arm can fold."""
+        """A base pressed against the leaf drives straight away from it, forwards or backwards, so the arm can fold.
+        Next to the frame the way away from the leaf can run into the wall: shorter steps and the other way come next.
+        """
         base = self._base_pose()
         heading = np.array([np.cos(base[2]), np.sin(base[2])])
-        distance = np.copysign(
+        away = np.copysign(
             self._grasp_config["standoff"],
             heading @ toward_robot(scene, self._door_angle, base[:2]),
         )
+        for distance in (away, away / 2.0, -away / 2.0, -away):
+            drive = self._clear_straight_drive(scene, side, base, distance)
+            if drive is not None:
+                self._stage("stepping the base away from the leaf")
+                self._run_segment(scene, drive, False)
+                return
+        raise SegmentFailed("the %s arm is caught against the leaf" % side)
+
+    def _clear_straight_drive(self, scene, side, base, distance):
         q = self._robot.q(side)
         drive = straight_drive(
             base,
@@ -680,16 +723,14 @@ class DoorOpeningServer(object):
             side,
             self._config["planner"]["linear_speed"],
         )
-        if not base_path_leaves_clear(
+        clear = base_path_leaves_clear(
             self._arms[side],
             self._surroundings(scene, side),
             q,
             drive.base_poses,
             self._move_collision,
-        ):
-            raise SegmentFailed("the %s arm is caught against the leaf" % side)
-        self._stage("stepping the base away from the leaf")
-        self._run_segment(scene, drive, False)
+        )
+        return drive if clear else None
 
     def _send_other_arm_home(self, scene, side):
         other = other_side(side)
@@ -700,21 +741,37 @@ class DoorOpeningServer(object):
             self._stage("moving the %s arm home" % other)
             self._move_arm_to(scene, other, [self._home[other]])
 
-    def _move_arm_to(self, scene, side, q_goals, mode=FREE):
-        """To the first of q_goals reachable straight in joint space or folded in through home."""
-        q, step = self._robot.q(side), self._grasp_config["joint_step"]
+    def _move_arm_to(self, scene, side, q_goals, mode=FREE, lead_in=None):
+        """To the first of q_goals reachable straight in joint space or folded in through home, after the lead_in path
+        at approach speed when one is given."""
+        grasp = self._grasp_config
+        lead_in = [self._robot.q(side)] if lead_in is None else list(lead_in)
+        q, step = lead_in[-1], grasp["joint_step"]
+        lead_speeds = [self._joint_speeds(side, grasp["approach_speed"])] * (
+            len(lead_in) - 1
+        )
         for q_goal in q_goals:
             for path in (
                 joint_path(q, q_goal, step),
                 via_path([q, self._home[side], q_goal], step),
             ):
                 if self._path_clear(scene, side, path, mode):
+                    move_speeds = [self._joint_speeds(side, grasp["move_speed"])] * (
+                        len(path) - 1
+                    )
                     self._robot.move_arm(
-                        side, path[1:], self._grasp_config["move_speed"]
+                        side,
+                        lead_in[1:] + list(path[1:]),
+                        np.array(lead_speeds + move_speeds),
                     )
                     return
         self._log_arm_state(side)
         raise SegmentFailed("no collision-free path to park the %s arm" % side)
+
+    def _joint_speeds(self, side, speed):
+        """speed for every joint, but no joint faster than grasp/max_joint_speed_fraction of its limit."""
+        limits = velocity_limits(self._arms[side])
+        return np.minimum(speed, self._grasp_config["max_joint_speed_fraction"] * limits)
 
     def _path_clear(self, scene, side, path, mode):
         """A hand leaving the handle keeps the same margin as the hand that came to it."""

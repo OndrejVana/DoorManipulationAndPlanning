@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from tiago_door_planning.model.collision import CollisionParams
-from tiago_door_planning.planning.door_planner import ArmChecks, Planner, PlannerParams, PlanningProblem
+from tiago_door_planning.planning.door_planner import QUICK_ONTO_SPOT_S, SPOT_SIDESTEP, ArmChecks, Planner, PlannerParams, PlanningProblem
 from tiago_door_planning.model.door_scene import DoorDimensions, handle_pose, scene_from_door_poses
 from tiago_door_planning.model.geometry import make_pose
 
@@ -42,13 +42,13 @@ def reach_band_arm(scene, near, far, max_angle=np.pi):
     return ArmChecks(solve, lambda q: [], np.inf, lambda pose, angle, q: True)
 
 
-def make_planner(near=0.4, far=0.85, params=PARAMS, arms=None, start_grasped=True):
+def make_planner(near=0.4, far=0.85, params=PARAMS, arms=None, start_grasped=True, regrasp_in_place=True):
     scene = push_scene()
     arms = arms or {"right": reach_band_arm(scene, near, far)}
     problem = PlanningProblem(
         scene, None, np.array([0.0, 0.0, 0.0]), 0.0, np.zeros(1), np.zeros(1), arms, "right", start_grasped, COLLISION
     )
-    return Planner(problem, params)
+    return Planner(problem, params, regrasp_in_place=regrasp_in_place)
 
 
 def test_push_door_reaches_goal_angle():
@@ -136,14 +136,14 @@ def test_released_start_grasps_with_the_arm_that_reaches():
     assert next(step for step in steps if step.grasped).grip == "left"
 
 
-def test_a_spot_beside_the_base_is_reached_without_stepping_sideways():
+def test_a_spot_beside_the_base_is_reached_without_stepping_further_sideways_than_it_tolerates():
     released = make_planner(start_grasped=False)
     steps = Planner(released.problem, PARAMS, np.array([[0.0, 0.08, 0.0]])).plan_to_spot()
     poses = [steps[-2].poses[-1]] + list(steps[-1].poses)
 
-    for before, after in zip(poses[:-1], poses[1:]):
-        sideways = np.array([-np.sin(before[2]), np.cos(before[2])])
-        assert abs((after[:2] - before[:2]) @ sideways) < 1e-9
+    sideways = [abs((after[:2] - before[:2]) @ np.array([-np.sin(before[2]), np.cos(before[2])]))
+                for before, after in zip(poses[:-1], poses[1:])]
+    assert sum(sideways) <= SPOT_SIDESTEP + 1e-9
     assert np.allclose(poses[-1], [0.0, 0.08, 0.0])
 
 
@@ -152,3 +152,17 @@ def test_a_grasp_the_arm_cannot_reach_from_its_folded_pose_is_never_planned():
     steps = make_planner(arms={"right": arm}, start_grasped=False, params=PARAMS._replace(max_expansions=300)).plan()
 
     assert not any(step.grasped for step in steps)
+
+
+def test_a_held_search_without_in_place_regrasps_never_lets_go():
+    steps = make_planner(near=0.4, far=0.6, regrasp_in_place=False).plan()
+
+    assert all(step.grasped for step in steps)
+
+
+def test_the_last_step_onto_a_spot_is_quick_when_one_is_in_reach():
+    released = make_planner(start_grasped=False)
+    steps = Planner(released.problem, PARAMS, np.array([[0.3, 0.1, 0.0]])).plan_to_spot()
+
+    assert steps[-1].duration <= QUICK_ONTO_SPOT_S
+    assert np.allclose(steps[-1].poses[-1], [0.3, 0.1, 0.0])

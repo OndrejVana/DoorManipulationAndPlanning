@@ -8,7 +8,7 @@ from .grasp_spots import grasp_pose_exists
 GoalParams = collections.namedtuple(
     "GoalParams",
     "preferred_angle pass_width handle_depth reach_min reach_max max_bearing cell_size heading_bins "
-    "extension_expansions regrasp_searches workers",
+    "extension_expansions regrasp_searches spot_regrasps_first max_sweep workers",
 )
 
 

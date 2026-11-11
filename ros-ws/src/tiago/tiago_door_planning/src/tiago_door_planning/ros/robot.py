@@ -13,7 +13,7 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 
 from ..sensing.door_sensing import scan_door_reading
 from ..model.geometry import matrix_to_pose2d
-from ..motion.grasp_motion import path_duration
+from ..motion.grasp_motion import waypoint_times
 from ..model.kinematics import arm_joint_names, load_arm_model
 from .config import scan_params
 from .ros_conversions import (
@@ -40,14 +40,19 @@ def hand_joint_names(side):
     return ["hand_%s_%s_joint" % (side, name) for name in ("thumb", "index", "mrl")]
 
 
-def trajectory_goal(joint_names, qs, duration):
+def trajectory_goal(joint_names, qs, times):
+    """A waypoint reached no later than the one before it is where the arm already is, so it is left out."""
     goal = FollowJointTrajectoryGoal()
     goal.trajectory.joint_names = joint_names
-    for index, q in enumerate(qs, start=1):
+    last = 0.0
+    for q, time in zip(qs, times):
+        if time <= last:
+            continue
         point = JointTrajectoryPoint()
         point.positions = list(q)
-        point.time_from_start = rospy.Duration(duration * index / len(qs))
+        point.time_from_start = rospy.Duration(time)
         goal.trajectory.points.append(point)
+        last = time
     return goal
 
 
@@ -119,15 +124,15 @@ class Robot(object):
             scan, frame_from_laser, scene, scan_params(self._config), min_angle
         )
 
-    def move_arm(self, side, qs, speed, contact_tolerance=0.0):
+    def move_arm(self, side, qs, speeds, contact_tolerance=0.0):
         """A hand pressing on the handle stops short of the last configuration; within contact_tolerance of it the
         move counts as done."""
-        duration = path_duration(
-            [self.q(side)] + list(qs), speed, self._config["grasp"]["min_move_s"]
+        times = waypoint_times(
+            [self.q(side)] + list(qs), speeds, self._config["grasp"]["min_move_s"]
         )
         client = self._arm_clients[side]
         state = send_and_wait(
-            client, trajectory_goal(arm_joint_names(side), qs, duration), duration
+            client, trajectory_goal(arm_joint_names(side), qs, times), times[-1]
         )
         if state == GoalStatus.SUCCEEDED:
             return
@@ -152,7 +157,7 @@ class Robot(object):
     def move_hand(self, side, positions, wait=True):
         """Fingers stop on the handle, so the hand goal is not required to succeed."""
         duration = self._config["grasp"]["hand_duration_s"]
-        goal = trajectory_goal(hand_joint_names(side), [positions], duration)
+        goal = trajectory_goal(hand_joint_names(side), [positions], [duration])
         if wait:
             send_and_wait(self._hand_clients[side], goal, duration)
         else:

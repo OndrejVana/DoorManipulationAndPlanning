@@ -76,17 +76,25 @@ tiago_door_planning/
    leaf (only the gripper may touch the door, at the handle) and the two arms against each other. The arm not
    holding the door waits at its starting (home) configuration. When one grasp runs out of reach or hits its limit,
    the plan lets go, finds base poses (grasp spots) where some grip grasps and can move the door further, drives
-   onto the nearest reachable one and searches on from the new grasp, up to `goal/regrasp_searches` times.
-2. **Choose.** Keep the plan with the fewest grasps, then the shortest one.
+   onto the nearest reachable one and searches on from the new grasp, up to `goal/regrasp_searches` times. With
+   `goal/spot_regrasps_first` a held search never lets go: a release and regrasp almost in place costs a whole
+   regrasp for a few degrees, so the search may only do it when going through grasp spots finds no passable plan.
+   No grasp opens the door by more than `grasp/max_sweep_deg`, so every regrasp the executor makes is one the
+   plan checked. The drive onto a spot prefers spots whose last step takes at most 1.5 s, since that step is not in
+   the search's cost.
+2. **Choose.** Keep the plan with the fewest grasps, then the shortest one. A plan that lets go before the door moves
+   starts by driving instead of grasping first (`grasp/skip_unused_first_grasp`).
 3. **Grasp.** Execute the grasp motion (checked with the smaller `grasp/move_margin`; arm moves are timed by
-   `grasp/move_speed` and `grasp/approach_speed`, the hand opens on the way; an approach the handle stops within
+   `grasp/move_speed` and `grasp/approach_speed`, each waypoint by its own joint travel and no joint faster than
+   `grasp/max_joint_speed_fraction` of its URDF limit, the hand opens on the way; an approach the handle stops within
    `grasp/contact_tolerance` of its end is done), close the hand and take the door angle
    from the hand on the handle. The laser reads a turned door a few degrees off, so it only confirms that the hand holds
    the handle: a laser angle more than `grasp/door_agreement_deg` away from the hand's means the grasp missed (a
    released door can drift a few degrees). Where the
    laser does not see the leaf (a pushed door past ~75° in the sim), the rays that pass where the leaf would be give the
    angle the door is open at least; a door seen open further than the hand means the hand closed on air, and the door
-   angle becomes that bound.
+   angle becomes that bound. A leaf the fit sees overrules the bound, which from some spots (behind a pulled door)
+   reads far too open.
 4. **Track.** Grasped segments are cut into pieces of at most `grasp/max_sweep_deg` of door motion and sent to
    `execute_door_segment`: the base follows its reference with a Kanayama law (plus `tracking/k_heading`, which turns it onto the
    reference heading while progress stands still), the arm keeps the gripper on the
@@ -94,9 +102,11 @@ tiago_door_planning/
    configuration, and rotation about the bar left free because the wrapped hand rolls on it (joint commands are integrated, at most `tracking/max_command_lead` ahead of the
    arm, so a joint sagging under load still moves), and progress slows down or stops on large errors. The door is passive, so
    progress jumps ahead when the measured door angle leads the reference, as far as the base can follow
-   (`tracking/base_error_slow`); the gripper target follows the door meanwhile. The laser door angle (`scan`) runs alongside:
+   (`tracking/base_error_slow`, `tracking/heading_error_slow`); the gripper target follows the door meanwhile. The laser door angle (`scan`) runs alongside:
    when the hand runs `tracking/lost_grasp_deg` ahead of the door, or the door that far ahead of the hand (a push that
-   kicked it away), for `tracking/lost_grasp_s`, the segment aborts.
+   kicked it away), for `tracking/lost_grasp_s`, the segment aborts. A push piece slows the door to a stop over its
+   last `planner/push_release_ramp_s`, so the leaf the hand cannot brake coasts less after the release, and released
+   drives slow to a stop over their last `planner/drive_ramp_s`, so the base ends on its planned pose.
 5. **Regrasp.** Between pieces the hand opens and leaves the handle: it retraces its approach while the arm is still
    within `grasp/retrace_tolerance` of the grasp; otherwise a hook drops `grasp/release_drop` and a push grasp backs
    away from the door by as much; a hand already closer to
@@ -116,7 +126,8 @@ tiago_door_planning/
    sends the arm that let go home.
 6. **Recover.** When a segment stalls or loses the handle, an arm move fails, or no grasp or plan is found after a
    regrasp, the robot lets go and plans the rest of the opening from
-   where it and the door really are, up to `goal/recoveries` times. A failure with the door already past the passable
+   where it and the door really are, up to `goal/recoveries` times. The laser checks the leaf before letting go. A
+   failure with the door already past the passable
    angle (e.g. the leaf against its stop) ends the opening as a success; a plan that ends short of it counts as a
    failed segment.
 
@@ -186,13 +197,14 @@ line up with a closed leaf. A released segment moves the base only and leaves th
 
 | Section | Contents |
 |---|---|
+| `speed` | `pipeline_speed` in [0, 1]: 0 runs at half the speeds set in the sections below, 0.5 at them, 1 at the fast values listed under `speed/fast`; values in between interpolate linearly, durations (`speed/durations`) as their rates. Base speeds and the tracker's arm speed cap (`speed/not_below_today`) never drop below the sections' values: the base tracking corrects in proportion to its speed, and the arm must keep up with a turning base. Both servers apply it when they load the config |
 | `door` | Default leaf width/thickness/height and wall size for the scene model |
 | `arm` | Gripper frame and the links approximated by collision spheres |
 | `collision` | Base radius and clearance margin |
 | `tracking` | Rate, base gains and limits, arm gains, joint-limit margin, slowdown/stop/abort thresholds, lost-grasp test |
 | `grasp` | Arms to plan with; for the pull grasp (hook under the bar) and the push grasp (palm on the bar, fingers over it) the orientation and the gripper offset from the handle per arm in door terms (toward hinge, down, out of the handle's face); hand open/closed positions, sweep per grasp, pull limit before switching to the back handle (90 disables it), release drop, retrace tolerance and how far short of the handle an approach stopped by contact may end, clearance margin and joint speeds for the moves to and from the handle, IK settings |
-| `planner` | Lattice resolution, primitives, door angle step, base, door and arm speeds used for edge durations, expansion and stall budgets, largest joint step between samples, joint-limit margin (larger for push grips, whose wrist runs toward its limits), released arm configuration |
-| `goal` | Preferred and passable opening, grasp-pose reach band, searches after a release, recoveries after a failed segment, base error that triggers a replan after a regrasp |
+| `planner` | Lattice resolution, primitives, door angle step, base, door (a slower one for pushing, since a push grasp cannot brake the door) and arm speeds used for edge durations, slowdowns at the end of released drives and push pieces, expansion and stall budgets, largest joint step between samples, joint-limit margin (larger for push grips, whose wrist runs toward its limits), released arm configuration |
+| `goal` | Preferred and passable opening, grasp-pose reach band, searches after a release, regrasps through grasp spots before regrasps in place, recoveries after a failed segment, base error that triggers a replan after a regrasp |
 | `scan` | Leaf fit and free-space bound (`max_rays_through` rays may cross a leaf) for the independent door angle |
 | `costmap` | Optional occupancy grid used for base collisions |
 

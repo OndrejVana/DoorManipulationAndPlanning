@@ -117,13 +117,15 @@ def grasp_lost(hand_angle, door_angle, tolerance):
     return door_angle is not None and hand_angle - door_angle > tolerance
 
 
+def unseen_leaf_bound(reading):
+    """The free-space bound of a leaf the laser does not see, else None: from some spots, such as behind a pulled
+    door, rays pass by a leaf the fit sees and the bound reads far too high."""
+    return reading.at_least if reading.angle is None else None
+
+
 def door_seen_ahead(hand_angle, reading, tolerance):
     """The laser shows the door further open than the hand holding it: the hand lost it or closed on air."""
-    seen = (
-        reading.at_least
-        if reading.angle is None
-        else max(reading.angle, reading.at_least)
-    )
+    seen = reading.angle if reading.angle is not None else reading.at_least
     return seen - hand_angle > tolerance
 
 

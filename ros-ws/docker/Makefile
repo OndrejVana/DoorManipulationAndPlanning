@@ -8,7 +8,7 @@ CATKIN_CONFIG := catkin config --extend /py3_ws/devel --cmake-args -DPYTHON_EXEC
 CHOWN := chown -R $(shell id -u):$(shell id -g) build devel logs .catkin_tools
 
 up:
-	docker compose up --build --detach
+	xhost +local: && docker compose up --build --detach
 
 shell:
 	xhost +local: && docker compose exec dev bash

@@ -9,6 +9,7 @@ from tiago_door_planning.sensing.door_sensing import (
     door_angle_from_points,
     door_estimate,
     door_seen_ahead,
+    unseen_leaf_bound,
     hand_off_door,
     grasp_lost,
     ray_entries,
@@ -130,6 +131,14 @@ def test_door_seen_ahead_of_the_hand_that_should_hold_it():
 
     assert door_seen_ahead(np.radians(70.0), DoorReading(None, np.radians(85.0)), tolerance)
     assert not door_seen_ahead(np.radians(70.0), DoorReading(None, np.radians(75.0)), tolerance)
+
+
+def test_a_seen_leaf_overrules_a_free_space_bound_that_reads_far_open():
+    reading = DoorReading(np.radians(53.0), np.radians(119.0))
+
+    assert not door_seen_ahead(np.radians(50.0), reading, np.radians(6.0))
+    assert unseen_leaf_bound(reading) is None
+    assert unseen_leaf_bound(DoorReading(None, np.radians(85.0))) == pytest.approx(np.radians(85.0))
 
 
 def test_door_estimate_trusts_the_hand_unless_the_laser_contradicts_it():

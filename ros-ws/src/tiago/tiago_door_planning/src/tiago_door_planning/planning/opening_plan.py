@@ -27,16 +27,36 @@ def _final_angle(steps):
     return steps[-1].angles[-1]
 
 
-def _within_grip_limit(problem, params, goal_angle):
-    """A grasp is done at its grip's limit; searching past it only burns expansions."""
-    return params._replace(
-        goal_angle=min(goal_angle, problem.grips[problem.start_grip].max_angle)
-    )
+def _within_grip_limit(problem, params, goal_angle, sweep_end=np.inf):
+    """A grasp is done at its grip's limit or at sweep_end; searching past them only burns expansions."""
+    limit = min(problem.grips[problem.start_grip].max_angle, sweep_end)
+    return params._replace(goal_angle=min(goal_angle, limit))
 
 
-def _open_with_regrasps(problem, params, goal_params):
+def _sweep_end(grasp_angle, params, goal_params):
+    """The last grid angle a grasp made at grasp_angle may open the door to: the executor regrasps after max_sweep,
+    so a longer grasp would regrasp where the plan never checked."""
+    grid_start = np.floor(grasp_angle / params.angle_step + 1e-9) * params.angle_step
+    steps = np.floor((grasp_angle + goal_params.max_sweep - grid_start) / params.angle_step + 1e-9)
+    return grid_start + steps * params.angle_step
+
+
+def _grasp_angle(steps):
+    """The door angle where the last grasp of the steps was made."""
+    index = len(steps) - 1
+    while index > 0 and steps[index - 1].grasped:
+        index -= 1
+    return steps[index].angles[0]
+
+
+def _open_with_regrasps(problem, params, goal_params, in_place):
     steps = Planner(
-        problem, _within_grip_limit(problem, params, params.goal_angle)
+        problem,
+        _within_grip_limit(
+            problem, params, params.goal_angle,
+            _sweep_end(problem.start_angle, params, goal_params),
+        ),
+        regrasp_in_place=in_place,
     ).plan()
     for _ in range(goal_params.regrasp_searches):
         if _final_angle(steps) >= params.goal_angle - 1e-9:
@@ -48,7 +68,12 @@ def _open_with_regrasps(problem, params, goal_params):
             break
         grasped = _grasped_problem(problem, regrasp[-1])
         more = Planner(
-            grasped, _within_grip_limit(grasped, params, params.goal_angle)
+            grasped,
+            _within_grip_limit(
+                grasped, params, params.goal_angle,
+                _sweep_end(grasped.start_angle, params, goal_params),
+            ),
+            regrasp_in_place=in_place,
         ).plan()
         if _final_angle(more) <= _final_angle(steps) + 1e-9:
             break
@@ -86,29 +111,32 @@ def _drive_and_grasp(released, params, goal_params):
     ]
 
 
-def _extend(problem, params, steps, cap, max_expansions):
+def _extend(problem, params, goal_params, steps, cap, in_place):
     last = steps[-1]
     extension_problem = _problem_from_step(problem, last)
-    extension_params = _within_grip_limit(extension_problem, params, cap)._replace(
-        max_expansions=max_expansions
-    )
+    sweep_end = _sweep_end(_grasp_angle(steps), params, goal_params)
+    extension_params = _within_grip_limit(
+        extension_problem, params, cap, sweep_end
+    )._replace(max_expansions=goal_params.extension_expansions)
     if not last.grasped or last.angles[-1] >= extension_params.goal_angle - 1e-9:
         return steps
-    extension = Planner(extension_problem, extension_params).plan()
+    extension = Planner(
+        extension_problem, extension_params, regrasp_in_place=in_place
+    ).plan()
     return steps + extension[1:]
 
 
-def _open_from_start(problem, params, goal_params):
+def _open_from_start(problem, params, goal_params, in_place):
     """A released robot first drives onto a grasp spot and grasps there."""
     if problem.start_grasped:
-        return _open_with_regrasps(problem, params, goal_params)
+        return _open_with_regrasps(problem, params, goal_params, in_place)
     regrasp = _drive_and_grasp(problem, params, goal_params)
     if regrasp is None:
         return None
     return (
         regrasp
         + _open_with_regrasps(
-            _grasped_problem(problem, regrasp[-1]), params, goal_params
+            _grasped_problem(problem, regrasp[-1]), params, goal_params, in_place
         )[1:]
     )
 
@@ -121,7 +149,18 @@ def plan_opening(problem, params, goal_params, goals=None):
     if goals is None:
         return None, None
     minimum, cap = goals
-    steps = _open_from_start(problem, params._replace(goal_angle=minimum), goal_params)
-    if steps is None or _final_angle(steps) < minimum - 1e-9:
+    steps = _passable_steps(problem, params._replace(goal_angle=minimum), goal_params)
+    if steps is None:
         return None, goals
-    return _extend(problem, params, steps, cap, goal_params.extension_expansions), goals
+    in_place = not goal_params.spot_regrasps_first
+    return _extend(problem, params, goal_params, steps, cap, in_place), goals
+
+
+def _passable_steps(problem, params, goal_params):
+    """A regrasp in place costs a whole release and grasp for a few degrees, so with spot_regrasps_first regrasps go
+    through grasp spots first and in place only when that finds no passable plan."""
+    for in_place in (False, True) if goal_params.spot_regrasps_first else (True,):
+        steps = _open_from_start(problem, params, goal_params, in_place)
+        if steps is not None and _final_angle(steps) >= params.goal_angle - 1e-9:
+            return steps
+    return None

@@ -43,6 +43,7 @@ GAINS = TrackingGains(
     gripper_error_abort=0.10,
     base_error_slow=0.05,
     base_error_stop=0.15,
+    heading_error_slow=0.09,
     min_base_rate=0.0,
     catch_up_margin=0.0,
 )
@@ -271,3 +272,16 @@ def test_progress_waits_for_a_base_left_behind_by_the_door():
 
     assert command.progress < 0.5
     assert command.gripper_error < 1e-6
+
+
+def test_progress_waits_for_a_base_left_behind_on_a_turn_in_place():
+    scene = make_scene()
+    turning = make_trajectory()._replace(base_poses=np.array([[0.0, 0.0, 0.0], [0.0, 0.0, -0.2], [0.0, 0.0, -0.4]]))
+    measurement = measurement_on_target(scene, turning, 0.075, np.eye(6, 3))
+    measurement = measurement._replace(base_pose=np.zeros(3))
+    measurement = measurement._replace(gripper_in_base=handle_pose(scene, 0.075))
+
+    command = tracking_step(turning, 0.0, scene, np.eye(4), measurement, GAINS, 0.02)
+
+    assert command.progress < 0.5
+

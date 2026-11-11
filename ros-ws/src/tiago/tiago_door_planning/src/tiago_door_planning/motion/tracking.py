@@ -16,7 +16,7 @@ TrackingGains = collections.namedtuple(
     "TrackingGains",
     "k_x k_y k_theta k_heading max_linear max_angular arm_gain damping nullspace_gain limit_gain limit_margin "
     "joint_limits gripper_error_slow gripper_error_stop gripper_error_abort base_error_slow base_error_stop "
-    "min_base_rate catch_up_margin",
+    "heading_error_slow min_base_rate catch_up_margin",
 )
 
 JointLimits = collections.namedtuple("JointLimits", "lower upper velocity")
@@ -192,13 +192,20 @@ def caught_up_progress(trajectory, progress, door_angle, measurement, gains):
     """Progress jumps to a door that ran ahead only as far as the base can follow; the arm keeps up with the door
     on its own meanwhile."""
     caught_up = progress_at_angle(trajectory, door_angle)
-    if (
-        caught_up <= progress
-        or base_distance(reference_at(trajectory, caught_up), measurement)
-        > gains.base_error_slow
+    if caught_up <= progress or not base_can_follow(
+        reference_at(trajectory, caught_up), measurement, gains
     ):
         return progress
     return caught_up
+
+
+def base_can_follow(reference, measurement, gains):
+    """Near the reference in position and in heading: a turn in place leaves the position where it was."""
+    turn = abs(wrap_angle(reference.base_pose[2] - measurement.base_pose[2]))
+    return (
+        base_distance(reference, measurement) <= gains.base_error_slow
+        and turn <= gains.heading_error_slow
+    )
 
 
 def tracking_step(

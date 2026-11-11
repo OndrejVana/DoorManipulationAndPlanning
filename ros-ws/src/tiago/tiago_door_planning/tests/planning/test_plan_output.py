@@ -66,3 +66,30 @@ def test_arm_configuration_follows_the_plan_between_steps():
     assert arm_qs[0] == pytest.approx(np.zeros(2))
     assert arm_qs[1] == pytest.approx(np.full(2, 0.01))
     assert arm_qs[-1] == pytest.approx(np.full(2, 0.2))
+
+
+def test_released_drive_slows_to_a_stop_on_its_planned_end():
+    steps = [START, move(0.1, 0.1, True), regrasp(0.1, 0.1, False), move(0.6, 0.1, False, duration=2.0)]
+
+    drive = plan_to_segments(steps, drive_ramp=1.0)[1].trajectory
+    steps_x = np.diff(drive.base_poses[:, 0])
+
+    assert drive.base_poses[-1] == pytest.approx([0.6, 0.0, 0.0])
+    assert len(drive.door_angles) == 31
+    assert steps_x[-1] < 0.1 * steps_x[0]
+
+
+def test_held_segments_keep_their_planned_timing():
+    steps = regrasp_plan()
+
+    assert len(plan_to_segments(steps, drive_ramp=1.0)[0].trajectory.door_angles) == 11
+
+
+def test_a_held_segment_slows_the_door_before_the_hand_lets_go():
+    steps = [START, move(0.0, 0.4, True, duration=2.0)]
+
+    door = plan_to_segments(steps, held_ramp=1.0)[0].trajectory.door_angles
+    rates = np.diff(door)
+
+    assert door[-1] == pytest.approx(0.4)
+    assert rates[-1] < 0.1 * rates[0]

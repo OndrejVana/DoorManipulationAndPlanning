@@ -17,11 +17,11 @@ from tiago_door_planning.motion.grasp_motion import (  # noqa: E402
     grasp_offset,
     ik_seeds,
     lift_targets,
-    path_duration,
     retreat_displacement,
     toward_robot,
     unrolled_offset,
     via_path,
+    waypoint_times,
 )
 from tiago_door_planning.model.kinematics import gripper_pose, load_arm_model  # noqa: E402
 
@@ -109,11 +109,27 @@ def test_approach_path_ends_at_grasp_and_follows_targets(arm, targets, grasp_q):
         assert np.linalg.norm(local_pose_error(gripper_pose(arm, q), target)) < 1e-3
 
 
-def test_path_duration_follows_the_joint_that_travels_furthest():
+def test_waypoints_are_timed_by_the_joint_that_travels_furthest_on_each_step():
     out_and_back = [np.zeros(7), np.full(7, 0.5), np.r_[0.0, np.full(6, 0.5)]]
 
-    assert path_duration(out_and_back, 0.5, 0.1) == pytest.approx(2.0)
-    assert path_duration([np.zeros(7), np.zeros(7)], 0.5, 1.0) == pytest.approx(1.0)
+    assert np.allclose(waypoint_times(out_and_back, 0.5, 0.1), [1.0, 2.0])
+
+
+def test_a_waypoint_on_the_start_costs_no_time():
+    path = [np.zeros(7), np.zeros(7), np.full(7, 0.5)]
+
+    assert np.allclose(waypoint_times(path, 0.5, 0.1), [0.0, 1.0])
+
+
+def test_each_joint_keeps_its_own_speed():
+    speeds = np.r_[1.0, np.full(6, 0.25)]
+
+    assert np.allclose(waypoint_times([np.zeros(7), np.r_[1.0, np.full(6, 0.1)]], speeds, 0.1), [1.0])
+
+
+def test_a_short_path_is_stretched_to_the_minimum_duration():
+    assert np.allclose(waypoint_times([np.zeros(7), np.full(7, 0.1), np.full(7, 0.2)], 1.0, 1.0), [0.5, 1.0])
+    assert np.allclose(waypoint_times([np.zeros(7), np.zeros(7)], 0.5, 1.0), [1.0])
 
 
 def test_via_path_passes_through_via_configuration():
