@@ -38,6 +38,9 @@
   <exec_depend>pcl_ros</exec_depend>
   <exec_depend>pcl_conversions</exec_depend>
   <exec_depend>laser_geometry</exec_depend>
+  <exec_depend>tf2_msgs</exec_depend>
+  <exec_depend>topic_tools</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
 
   <!-- Nodes you launch -->
   <exec_depend>orb_slam2_ros</exec_depend>

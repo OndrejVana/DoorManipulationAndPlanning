@@ -33,13 +33,6 @@ roslaunch tiago_door_bringup main.launch
 For a real robot export `ROS_MASTER_URI` (and `ROS_IP`) on the host before `make up`; they are passed through.
 Sync clocks first: [ROBOT_TIME_SYNC.md](../ROBOT_TIME_SYNC.md).
 
-## SSH
-
-```bash
-ssh root@tiago-114c        # Ethernet
-ssh root@192.168.130.114   # WiFi
-```
-
 ## Resources
 
 - [TIAGo tutorials](http://wiki.ros.org/Robots/TIAGo/Tutorials)

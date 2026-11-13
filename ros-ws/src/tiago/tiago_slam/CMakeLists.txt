@@ -132,6 +132,9 @@ add_definitions(${PCL_DEFINITIONS})
 catkin_install_python(
   PROGRAMS
     scripts/laser_processor.py
+    scripts/tf_filter.py
+    scripts/imu_fix.py
+    scripts/slam_bridge.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

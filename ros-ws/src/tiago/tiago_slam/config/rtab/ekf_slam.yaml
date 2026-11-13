@@ -1,0 +1,33 @@
+frequency: 30
+sensor_timeout: 0.2
+two_d_mode: true
+
+publish_tf: true
+odom_frame: odom
+base_link_frame: base_footprint
+world_frame: odom
+
+# [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+odom0: /mobile_base_controller/odom
+odom0_config: [false, false, false,
+               false, false, false,
+               true,  true,  false,
+               false, false, false,
+               false, false, false]
+odom0_queue_size: 10
+
+odom1: /rgbd_odometry/odom
+odom1_config: [false, false, false,
+               false, false, false,
+               true,  false, false,
+               false, false, true,
+               false, false, false]
+odom1_queue_size: 10
+
+imu0: /slam/imu
+imu0_config: [false, false, false,
+              false, false, false,
+              false, false, false,
+              false, false, true,
+              false, false, false]
+imu0_queue_size: 10

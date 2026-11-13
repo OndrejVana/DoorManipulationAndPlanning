@@ -77,28 +77,6 @@ rm ~/.ros/rtabmap.db
 rosrun map_server map_saver -f ~/maps/my_map
 ```
 
-## Real Robot Setup
-
-Set ROS master to the robot (see robot manual, pages 63–64):
-
-```bash
-export ROS_MASTER_URI=http://tiago-114c:11311
-
-# Ethernet
-export ROS_IP=10.68.0.128
-
-# Wi-Fi
-export ROS_IP=192.168.251.123
-```
-
-Sanity checks:
-
-```bash
-rostopic echo /scan_raw                              # Laser data
-rostopic echo /mobile_base_controller/odom           # Odometry
-rosrun tf tf_echo base_footprint base_laser_link     # TF tree
-```
-
 ## Troubleshooting
 
 ### Old mapping nodes still running

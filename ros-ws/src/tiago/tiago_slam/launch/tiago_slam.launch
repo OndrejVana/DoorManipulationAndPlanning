@@ -11,6 +11,58 @@
   <arg name="odom_frame"  default="odom"/>
   <arg name="map_frame"   default="map"/>
 
+  <!-- Relay the camera topics locally so they cross the robot link once -->
+  <arg name="relay"        default="true" doc="Relay the camera topics locally so they cross the robot link once"/>
+  <arg name="relay_prefix" default="/slam_relay"/>
+  <arg name="prefix" value="$(eval arg('relay_prefix') if arg('relay') else '')"/>
+  <arg name="rgb"             value="$(arg prefix)$(arg rgb_topic)"/>
+  <arg name="depth"           value="$(arg prefix)$(arg depth_topic)"/>
+  <arg name="depth_info"      value="$(arg prefix)$(arg depth_camera_info_topic)"/>
+  <arg name="rgb_info"        value="$(arg prefix)$(arg rgb_camera_info_topic)"/>
+
+  <group if="$(arg relay)">
+    <node name="relay_rgb"        pkg="topic_tools" type="relay" args="$(arg rgb_topic) $(arg rgb)"/>
+    <node name="relay_rgb_info"   pkg="topic_tools" type="relay" args="$(arg rgb_camera_info_topic) $(arg rgb_info)"/>
+    <node name="relay_depth"      pkg="topic_tools" type="relay" args="$(arg depth_topic) $(arg depth)"/>
+    <node name="relay_depth_info" pkg="topic_tools" type="relay" args="$(arg depth_camera_info_topic) $(arg depth_info)"/>
+  </group>
+
+  <!-- EKF -->
+  <arg name="odometry"          default="ekf" doc="ekf: wheels + visual odometry + IMU on slam_tf; wheel: wheel odometry from /tf"/>
+  <arg name="slam_tf"           default="/slam/tf"/>
+  <arg name="imu_yaw_rate_sign" default="-1.0" doc="tiago-114c's /base_imu reports turns with the wrong sign"/>
+  <arg name="ekf" value="$(eval arg('odometry') == 'ekf')"/>
+
+  <group if="$(arg ekf)">
+    <node name="slam_tf_filter" pkg="tiago_slam" type="tf_filter.py">
+      <param name="odom_frame" value="$(arg odom_frame)"/>
+      <param name="base_frame" value="$(arg base_frame)"/>
+      <remap from="tf_in"         to="/tf"/>
+      <remap from="tf_static_in"  to="/tf_static"/>
+      <remap from="tf_out"        to="$(arg slam_tf)"/>
+      <remap from="tf_static_out" to="$(arg slam_tf)_static"/>
+    </node>
+    <node name="slam_imu_fix" pkg="tiago_slam" type="imu_fix.py">
+      <param name="yaw_rate_sign" value="$(arg imu_yaw_rate_sign)"/>
+      <remap from="imu_in"     to="/base_imu"/>
+      <remap from="imu_out"    to="/slam/imu"/>
+      <remap from="wheel_odom" to="/mobile_base_controller/odom"/>
+    </node>
+    <node name="slam_ekf" pkg="robot_localization" type="ekf_localization_node">
+      <rosparam command="load" file="$(find tiago_slam)/config/rtab/ekf_slam.yaml"/>
+      <remap from="odometry/filtered" to="/slam/odometry"/>
+      <remap from="/tf"        to="$(arg slam_tf)"/>
+      <remap from="/tf_static" to="$(arg slam_tf)_static"/>
+    </node>
+    <node name="slam_bridge" pkg="tiago_slam" type="slam_bridge.py">
+      <param name="map_frame"  value="$(arg map_frame)"/>
+      <param name="odom_frame" value="$(arg odom_frame)"/>
+      <param name="base_frame" value="$(arg base_frame)"/>
+      <remap from="wheel_odom" to="/mobile_base_controller/odom"/>
+      <remap from="slam_tf"    to="$(arg slam_tf)"/>
+      <remap from="slam_pose"  to="/slam_pose"/>
+    </node>
+  </group>
 
   <node name="kill_head_nodes" pkg="tiago_slam" type="kill_head_nodes.py" output="screen"/>
 
@@ -18,8 +70,8 @@
         pkg="depthimage_to_laserscan"
         type="depthimage_to_laserscan"
         output="screen">
-    <remap from="image"       to="$(arg depth_topic)"/>
-    <remap from="camera_info" to="$(arg depth_camera_info_topic)"/>
+    <remap from="image"       to="$(arg depth)"/>
+    <remap from="camera_info" to="$(arg depth_info)"/>
     <remap from="scan"        to="$(arg scan_topic)"/>
     <param name="output_frame_id" value="$(arg base_frame)"/>
     <param name="scan_height"     value="10"/>
@@ -34,13 +86,17 @@
     <param name="subscribe_depth" value="true"/>
     <param name="subscribe_rgbd"  value="false"/>
 
-    <remap from="rgb/image"       to="$(arg rgb_topic)"/>
-    <remap from="depth/image"     to="$(arg depth_topic)"/>
-    <remap from="rgb/camera_info" to="$(arg rgb_camera_info_topic)"/>
+    <remap from="rgb/image"       to="$(arg rgb)"/>
+    <remap from="depth/image"     to="$(arg depth)"/>
+    <remap from="rgb/camera_info" to="$(arg rgb_info)"/>
     <remap from="odom"            to="/rgbd_odometry/odom"/>
+    <remap if="$(arg ekf)" from="/tf"        to="$(arg slam_tf)"/>
+    <remap if="$(arg ekf)" from="/tf_static" to="$(arg slam_tf)_static"/>
 
-    <param name="subscribe_imu"           value="true"/>
+    <param name="subscribe_imu"           value="$(eval not arg('ekf'))"/>
     <remap from="imu"                     to="/base_imu"/>
+    <param if="$(arg ekf)" name="publish_null_when_lost" value="false"/>
+    <param if="$(arg ekf)" name="Odom/ResetCountdown"    value="1"/>
 
     <param name="approx_sync"             value="true"/>
     <param name="queue_size"              value="100"/>
@@ -56,8 +112,10 @@
 
   <node name="rtabmap" pkg="rtabmap_ros" type="rtabmap" output="screen" args="--delete_db_on_start">
     <param name="frame_id"     value="$(arg base_frame)"/>
-    <param name="odom_frame_id" value="$(arg odom_frame)"/>
+    <param name="odom_frame_id" value="$(eval '' if arg('ekf') else arg('odom_frame'))"/>
     <param name="map_frame_id"  value="$(arg map_frame)"/>
+    <remap if="$(arg ekf)" from="/tf"        to="$(arg slam_tf)"/>
+    <remap if="$(arg ekf)" from="/tf_static" to="$(arg slam_tf)_static"/>
 
     <param name="subscribe_depth" value="true"/>
     <param name="subscribe_rgbd"  value="false"/>
@@ -65,14 +123,14 @@
     <param name="subscribe_odom"  value="true"/>
     <param name="subscribe_scan"  value="true"/>
 
-    <remap from="rgb/image"       to="$(arg rgb_topic)"/>
-    <remap from="depth/image"     to="$(arg depth_topic)"/>
-    <remap from="rgb/camera_info" to="$(arg rgb_camera_info_topic)"/>
-    <remap from="odom"            to="/rgbd_odometry/odom"/>
+    <remap from="rgb/image"       to="$(arg rgb)"/>
+    <remap from="depth/image"     to="$(arg depth)"/>
+    <remap from="rgb/camera_info" to="$(arg rgb_info)"/>
+    <remap from="odom"            to="$(eval '/slam/odometry' if arg('ekf') else '/rgbd_odometry/odom')"/>
     <remap from="scan"            to="$(arg scan_topic)"/>
     <remap from="grid_map"        to="/map"/>
 
-    <param name="subscribe_imu"            value="true"/>
+    <param name="subscribe_imu"            value="$(eval not arg('ekf'))"/>
     <remap from="imu"                      to="/base_imu"/>
 
     <param name="approx_sync"              value="true"/>
@@ -101,7 +159,8 @@
   </node>
 
 
-  <node name="slam_pose_publisher" pkg="tiago_slam" type="tf_to_pose.py" output="screen">
+  <!-- With the EKF slam_bridge publishes /slam_pose. -->
+  <node unless="$(arg ekf)" name="slam_pose_publisher" pkg="tiago_slam" type="tf_to_pose.py" output="screen">
     <param name="from_frame"   value="$(arg map_frame)"/>
     <param name="to_frame"     value="$(arg base_frame)"/>
     <param name="output_topic" value="/slam_pose"/>
