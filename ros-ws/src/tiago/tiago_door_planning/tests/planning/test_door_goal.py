@@ -1,7 +1,7 @@
 import numpy as np
 
 from tiago_door_planning.model.collision import CollisionParams, distance_grid
-from tiago_door_planning.planning.door_goal import GoalParams, clear_opening, goal_range, passable_angle
+from tiago_door_planning.planning.door_goal import GoalParams, clear_opening, goal_angle, goal_range, passable_angle
 from tiago_door_planning.planning.door_planner import ArmChecks, PlanningProblem
 from tiago_door_planning.model.door_scene import DoorDimensions, door_box, handle_pose, scene_from_door_poses, wall_boxes
 from tiago_door_planning.model.geometry import make_pose, wrap_angle
@@ -24,6 +24,7 @@ GOAL = GoalParams(
     spot_regrasps_first=True,
     max_sweep=np.pi,
     workers=1,
+    passable_margin=0.0,
 )
 
 
@@ -114,3 +115,23 @@ def test_free_space_behind_a_wall_is_not_connected():
 
     assert is_connected(free_space, [0.0, -0.3])
     assert not is_connected(free_space, [0.0, 0.8])
+
+
+def test_goal_angle_adds_the_margin():
+    assert np.isclose(goal_angle(1.3, 0.1, 1.5), 1.4)
+
+
+def test_goal_angle_stops_at_the_cap():
+    assert np.isclose(goal_angle(1.3, 0.1, 1.35), 1.35)
+
+
+def test_goal_angle_is_never_below_the_passable_angle():
+    assert np.isclose(goal_angle(1.3, 0.1, 1.2), 1.3)
+
+
+def test_goal_range_aims_past_the_passable_angle_by_the_margin():
+    margin = np.radians(5.0)
+    goal, cap = goal_range(make_problem(), GOAL._replace(passable_margin=margin), STEP)
+
+    assert np.isclose(goal, passable_angle(push_scene(), GOAL.pass_width, GOAL.handle_depth, STEP) + margin)
+    assert np.isclose(cap, GOAL.preferred_angle)

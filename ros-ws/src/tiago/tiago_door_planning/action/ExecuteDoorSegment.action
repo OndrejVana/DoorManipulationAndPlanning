@@ -4,6 +4,8 @@ string hinge_side
 bool push
 string arm
 bool grasped
+string grasp_action
+float64[] free_wrench
 float64[] base_x
 float64[] base_y
 float64[] base_yaw

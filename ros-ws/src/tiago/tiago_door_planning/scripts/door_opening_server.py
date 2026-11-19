@@ -27,7 +27,11 @@ from tiago_door_planning.motion.grasp_motion import (
     retreat_displacement,
     toward_robot,
 )
-from tiago_door_planning.motion.grasp_motion import unrolled_offset, via_path
+from tiago_door_planning.motion.grasp_motion import (
+    lateral_error,
+    unrolled_offset,
+    via_path,
+)
 from tiago_door_planning.planning.grips import (
     arm_checks,
     describe_segment,
@@ -58,7 +62,7 @@ from tiago_door_planning.msg import (
     OpenDoorAction,
 )
 from tiago_door_planning.msg import OpenDoorFeedback, OpenDoorResult
-from tiago_door_planning.planning.opening_plan import plan_opening
+from tiago_door_planning.planning.opening_plan import plan_opening, stop_angle
 from tiago_door_planning.planning.plan_output import plan_to_segments
 from tiago_door_planning.ros.robot import (
     SCAN_TOPIC,
@@ -119,7 +123,7 @@ def occupancy_to_grid(msg, occupied_threshold):
     return distance_grid(occupancy, info.resolution, origin, occupied_threshold)
 
 
-def segment_goal(goal, scene, trajectory, grasped):
+def segment_goal(goal, scene, trajectory, grasped, action, free_wrench):
     segment = ExecuteDoorSegmentGoal()
     segment.hinge_pose = goal.hinge_pose
     segment.handle_pose = pose_msg(
@@ -130,7 +134,8 @@ def segment_goal(goal, scene, trajectory, grasped):
         goal.push,
         trajectory.side,
     )
-    segment.grasped = grasped
+    segment.grasped, segment.grasp_action = grasped, action if grasped else ""
+    segment.free_wrench = list(free_wrench) if grasped and free_wrench is not None else []
     segment.base_x, segment.base_y, segment.base_yaw = trajectory.base_poses.T.tolist()
     segment.door_angles = trajectory.door_angles.tolist()
     segment.sample_period = trajectory.sample_period
@@ -163,6 +168,7 @@ class DoorOpeningServer(object):
         self._door_angle, self._passable_angle, self._laser_decided = 0.0, np.inf, False
         self._goals = None
         self._holding, self._holding_action, self._approach = None, None, None
+        self._free_wrench = None
         self._released_q = None
         result = OpenDoorResult()
         try:
@@ -192,6 +198,7 @@ class DoorOpeningServer(object):
             raise OpeningFailed("preempted")
 
     def _open(self):
+        self._robot.require_wrench(self._grasp_config["arms"])
         self._stage("planning")
         self._set_up_door()
         plan = self._choose_plan()
@@ -343,14 +350,18 @@ class DoorOpeningServer(object):
             goal_params(self._config),
             self._goals,
         )
-        rospy.loginfo("[DoorOpening] planning took %.1f s", rospy.get_time() - started)
+        rospy.loginfo(
+            "[DoorOpening] planning took %.1f s%s",
+            rospy.get_time() - started,
+            "" if steps is None else ", the plan ends at %.1f deg" % np.degrees(steps[-1].angles[-1]),
+        )
         if self._goals is None:
             raise OpeningFailed("door cannot be opened wide enough to pass from here")
-        self._passable_angle = self._goals[0]
         if steps is None:
             raise OpeningFailed(
-                "no opening plan to %.0f deg" % np.degrees(self._passable_angle)
+                "no opening plan to %.0f deg" % np.degrees(self._goals[0])
             )
+        self._set_stop_angle(steps)
         planner = self._config["planner"]
         held_ramp = planner["push_release_ramp_s"] if self._push else 0.0
         return plan_to_segments(steps, planner["drive_ramp_s"], held_ramp)
@@ -380,6 +391,23 @@ class DoorOpeningServer(object):
         self._park(self._scenes["front"], self._last_grip.arm)
         self._stage("planning again from %.0f deg" % np.degrees(self._door_angle))
         return self._plan_released()
+
+    def _set_stop_angle(self, steps):
+        """Every plan sets where the opening stops, the plan's own end when it settled short of the goal."""
+        target = stop_angle(self._goals, steps)
+        if target < self._goals[0] - 1e-9:
+            rospy.loginfo(
+                "[DoorOpening] the last turn to %.0f deg is not reachable, ending at %.0f deg",
+                np.degrees(self._goals[0]),
+                np.degrees(target),
+            )
+        if target != self._passable_angle:
+            rospy.loginfo(
+                "[DoorOpening] opening to %.0f deg, grasp poses up to %.0f deg",
+                np.degrees(target),
+                np.degrees(self._goals[1]),
+            )
+        self._passable_angle = target
 
     def _plan_released(self):
         """The arm configuration that last held the handle seeds the next grasps, as it does in the first plan."""
@@ -534,7 +562,9 @@ class DoorOpeningServer(object):
     def _run_segment(self, scene, trajectory, grasped):
         self._segment_client.wait_for_server(rospy.Duration(5.0))
         self._segment_client.send_goal(
-            segment_goal(self._goal, scene, trajectory, grasped)
+            segment_goal(
+                self._goal, scene, trajectory, grasped, self._holding_action, self._free_wrench
+            )
         )
         self._segment_client.wait_for_result()
         result = self._segment_client.get_result()
@@ -567,26 +597,47 @@ class DoorOpeningServer(object):
                 self._base_pose(),
                 gripper_pose(self._arms[grip.arm], self._robot.q(grip.arm)),
             )
-            error = np.linalg.norm(measured[:3, 3] - self._offsets[grip][:3, 3])
+            error = self._grasp_error(scene, measured, grip)
             self._log_grasp(measured, grip, planned_q)
             if on_door and error <= self._grasp_config["max_grasp_error"]:
                 break
         return measured
 
+    def _grasp_error(self, scene, measured, grip):
+        """A hand the force stopped is on the handle, short of the planned grasp only along its way in."""
+        error = measured[:3, 3] - self._offsets[grip][:3, 3]
+        if self._approach_end.ended_by != "force":
+            return np.linalg.norm(error)
+        arm, base = self._arms[grip.arm], self._base_pose()
+        start, end = (
+            measure_grasp_offset(scene, self._door_angle, base, gripper_pose(arm, q))[:3, 3]
+            for q in (self._approach[0], self._approach[-1])
+        )
+        lateral = np.linalg.norm(lateral_error(error, end - start))
+        rospy.loginfo(
+            "[DoorOpening] grasp error across the approach %.0f mm", 1000.0 * lateral
+        )
+        return lateral
+
     def _grasp(self, side, move, approach, action):
-        """The hand opens on the way to the handle."""
+        """The hand opens on the way to the handle. The wrench is zeroed with the arm still in front of the handle; a
+        hand stopped by contact further out than grasp/contact_tolerance closes all the same and the grasp checks
+        that follow find it off the handle."""
         grasp = self._grasp_config
         self._robot.move_hand(side, grasp["hand_open"], wait=False)
         self._robot.move_arm(side, move[1:], self._joint_speeds(side, grasp["move_speed"]))
         self._robot.wait_for_hand(side)
-        self._robot.move_arm(
+        zero = self._free_wrench = self._robot.zero_wrench(side)
+        end = self._robot.approach_arm(
             side,
             approach,
             self._joint_speeds(side, grasp["approach_speed"]),
             grasp["contact_tolerance"],
+            zero,
         )
+        self._log_approach(side, approach[-1], end)
         self._robot.move_hand(side, grasp["hand_closed"])
-        self._approach = list(approach)
+        self._approach, self._approach_end = list(approach), end
         self._holding, self._holding_action = side, action
 
     def _measure_door(self, scene, offset):
@@ -698,8 +749,11 @@ class DoorOpeningServer(object):
     def _step_away_from_leaf(self, scene, side):
         """A base pressed against the leaf drives straight away from it, forwards or backwards, so the arm can fold.
         Next to the frame the way away from the leaf can run into the wall: shorter steps and the other way come next.
+        Only a step after which the arm folds home clear counts, and none is needed when it folds where it stands.
         """
         base = self._base_pose()
+        if self._fold_clear(scene, side, base):
+            return
         heading = np.array([np.cos(base[2]), np.sin(base[2])])
         away = np.copysign(
             self._grasp_config["standoff"],
@@ -707,11 +761,19 @@ class DoorOpeningServer(object):
         )
         for distance in (away, away / 2.0, -away / 2.0, -away):
             drive = self._clear_straight_drive(scene, side, base, distance)
-            if drive is not None:
+            if drive is not None and self._fold_clear(scene, side, drive.base_poses[-1]):
                 self._stage("stepping the base away from the leaf")
                 self._run_segment(scene, drive, False)
                 return
         raise SegmentFailed("the %s arm is caught against the leaf" % side)
+
+    def _fold_clear(self, scene, side, base_pose):
+        """Whether the arm folds home on a straight joint path with the base at base_pose."""
+        path = joint_path(
+            self._robot.q(side), self._home[side], self._grasp_config["joint_step"]
+        )
+        around = self._surroundings(scene, side)._replace(base_pose=base_pose)
+        return arm_path_clear(self._arms[side], around, path, GRASP, self._move_collision)
 
     def _clear_straight_drive(self, scene, side, base, distance):
         q = self._robot.q(side)
@@ -828,6 +890,24 @@ class DoorOpeningServer(object):
             rounded(self._base_pose()),
             rounded(self._robot.q(grip.arm)),
             rounded(planned_q),
+        )
+
+    def _log_approach(self, side, q_end, end):
+        q = self._robot.q(side)
+        arm = self._arms[side]
+        short_mm = 1000.0 * np.linalg.norm(
+            gripper_pose(arm, q)[:3, 3] - gripper_pose(arm, q_end)[:3, 3]
+        )
+        short_rad = np.max(np.abs(q - q_end))
+        early = short_rad > self._grasp_config["contact_tolerance"]
+        rospy.loginfo(
+            "[DoorOpening] %s approach ended by %s: peak force %.1f N, %.3f rad / %.0f mm short of the handle%s",
+            side,
+            end.ended_by,
+            end.peak_force,
+            short_rad,
+            short_mm,
+            ", beyond contact_tolerance" if early else "",
         )
 
     def _log_arm_state(self, side):

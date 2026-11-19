@@ -13,9 +13,10 @@ catkin_package()
 catkin_install_python(PROGRAMS
   scripts/tuck_arm.py
   scripts/spawn_without_safety_box.py
+  scripts/ft_corrected_sim.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
-install(DIRECTORY launch worlds models
+install(DIRECTORY config launch worlds models
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )

@@ -1,6 +1,6 @@
 import numpy as np
 
-from .door_goal import goal_range
+from .door_goal import goal_range, passable_angle
 from .door_planner import PathStep, Planner
 from ..model.geometry import wrap_angle
 from .grasp_spots import drive_distance, drive_map, grasp_spots
@@ -37,7 +37,9 @@ def _sweep_end(grasp_angle, params, goal_params):
     """The last grid angle a grasp made at grasp_angle may open the door to: the executor regrasps after max_sweep,
     so a longer grasp would regrasp where the plan never checked."""
     grid_start = np.floor(grasp_angle / params.angle_step + 1e-9) * params.angle_step
-    steps = np.floor((grasp_angle + goal_params.max_sweep - grid_start) / params.angle_step + 1e-9)
+    steps = np.floor(
+        (grasp_angle + goal_params.max_sweep - grid_start) / params.angle_step + 1e-9
+    )
     return grid_start + steps * params.angle_step
 
 
@@ -53,7 +55,9 @@ def _open_with_regrasps(problem, params, goal_params, in_place):
     steps = Planner(
         problem,
         _within_grip_limit(
-            problem, params, params.goal_angle,
+            problem,
+            params,
+            params.goal_angle,
             _sweep_end(problem.start_angle, params, goal_params),
         ),
         regrasp_in_place=in_place,
@@ -70,7 +74,9 @@ def _open_with_regrasps(problem, params, goal_params, in_place):
         more = Planner(
             grasped,
             _within_grip_limit(
-                grasped, params, params.goal_angle,
+                grasped,
+                params,
+                params.goal_angle,
                 _sweep_end(grasped.start_angle, params, goal_params),
             ),
             regrasp_in_place=in_place,
@@ -149,11 +155,53 @@ def plan_opening(problem, params, goal_params, goals=None):
     if goals is None:
         return None, None
     minimum, cap = goals
+    finished = _finished_off_grid(problem, params, goal_params, minimum)
+    if finished is not None:
+        return finished, goals
     steps = _passable_steps(problem, params._replace(goal_angle=minimum), goal_params)
     if steps is None:
         return None, goals
     in_place = not goal_params.spot_regrasps_first
     return _extend(problem, params, goal_params, steps, cap, in_place), goals
+
+
+def _grid_below(angle, angle_step):
+    return np.floor(angle / angle_step + 1e-9) * angle_step
+
+
+def _finished_off_grid(problem, params, goal_params, goal):
+    """A goal between grid angles"""
+    search_goal = _grid_below(goal, params.angle_step)
+    passable = passable_angle(
+        problem.scene,
+        goal_params.pass_width,
+        goal_params.handle_depth,
+        params.angle_step,
+    )
+    if search_goal >= goal - 1e-9 or passable is None or search_goal < passable - 1e-9:
+        return None
+    steps = _passable_steps(
+        problem, params._replace(goal_angle=search_goal), goal_params
+    )
+    if steps is None or _final_angle(steps) >= goal - 1e-9:
+        return steps
+    finish = _finish_step(problem, params, goal_params, steps, goal)
+    return steps if finish is None else steps + [finish]
+
+
+def _finish_step(problem, params, goal_params, steps, goal):
+    last = steps[-1]
+    if (
+        not last.grasped
+        or goal > _sweep_end(_grasp_angle(steps), params, goal_params) + 1e-9
+    ):
+        return None
+    return Planner(_grasped_problem(problem, last), params).finish_step(goal)
+
+
+def stop_angle(goals, steps):
+    """The door angle the opening stops at: the goal, or where a plan that settled short of it ends."""
+    return min(goals[0], _final_angle(steps))
 
 
 def _passable_steps(problem, params, goal_params):

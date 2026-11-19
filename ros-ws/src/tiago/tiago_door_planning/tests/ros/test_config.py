@@ -4,10 +4,13 @@ import numpy as np
 import pytest
 import yaml
 
-from tiago_door_planning.planning.grips import grasp_action, grasp_rotation
+from tiago_door_planning.planning.door_planner import Grip
+from tiago_door_planning.planning.grips import face_door_offset, grip_joint_margin, grasp_action, grasp_rotation
 from tiago_door_planning.ros.config import (
     apply_pipeline_speed,
     collision_params,
+    compliance_params,
+    force_params,
     goal_params,
     planner_params,
     scan_params,
@@ -28,6 +31,8 @@ def test_shipped_config_builds_all_parameter_sets():
     assert goal_params(config).preferred_angle <= np.pi / 2.0 + 1e-9
     assert collision_params(config).base_radius > 0.0
     assert scan_params(config).max_angle > 0.0
+    assert "{side}" in force_params(config).topic
+    assert compliance_params(config).max_offset > 0.0
     for action in ("pull", "push"):
         assert np.allclose(grasp_rotation(config, action) @ grasp_rotation(config, action).T, np.eye(3))
 
@@ -105,3 +110,25 @@ def test_pushing_plans_with_its_own_door_rate():
 
     assert planner_params(config).door_rate == pytest.approx(np.radians(15.0))
     assert planner_params(config, push=True).door_rate == pytest.approx(np.radians(10.0))
+
+
+def test_a_missing_compliance_key_fails_loudly():
+    config = load_config()
+    del config["force"]["max_offset"]
+
+    with pytest.raises(TypeError):
+        compliance_params(config)
+
+
+def test_the_back_handle_takes_its_own_push_offset():
+    grasp = {"push": {"door_offset": {"left": [1, 2, 3]}, "back_door_offset": {"left": [4, 5, 6]}}}
+
+    assert face_door_offset(grasp, "push", Grip("left", "front")) == [1, 2, 3]
+    assert face_door_offset(grasp, "push", Grip("left", "back")) == [4, 5, 6]
+
+
+def test_a_push_grip_keeps_its_wrist_further_from_the_limits():
+    planner = {"joint_margin": 0.2, "push_joint_margin": 0.25, "push_wrist_margin": 0.45}
+
+    assert np.allclose(grip_joint_margin(planner, True), [0.25, 0.25, 0.25, 0.25, 0.45, 0.45, 0.25])
+    assert grip_joint_margin(planner, False) == 0.2

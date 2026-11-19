@@ -5,7 +5,7 @@ from tiago_door_planning.planning.door_goal import GoalParams
 from tiago_door_planning.planning.door_planner import ArmChecks, Grip, PlannerParams, PlanningProblem
 from tiago_door_planning.model.door_scene import DoorDimensions, back_scene, door_angle_at, handle_pose, scene_from_door_poses
 from tiago_door_planning.model.geometry import make_pose
-from tiago_door_planning.planning.opening_plan import plan_opening
+from tiago_door_planning.planning.opening_plan import plan_opening, stop_angle
 
 DIMENSIONS = DoorDimensions(width=0.9, thickness=0.04, height=2.0, wall_thickness=0.15, wall_length=1.0)
 COLLISION = CollisionParams(base_radius=0.27, base_center_height=0.15, margin=0.03)
@@ -41,6 +41,7 @@ GOAL = GoalParams(
     spot_regrasps_first=True,
     max_sweep=np.pi,
     workers=1,
+    passable_margin=0.0,
 )
 
 
@@ -162,3 +163,73 @@ def test_no_grasp_opens_the_door_further_than_the_executor_sweeps():
 
     assert max(grasp_sweeps(steps)) <= max_sweep + 1e-9
     assert final_angle(steps) >= minimum - 1e-9
+
+
+def plan_to(goal, arms=None, goal_params=GOAL):
+    steps, _ = plan_opening(make_problem(arms), PARAMS, goal_params, (goal, np.radians(90.0)))
+    return steps
+
+
+def test_a_goal_on_the_grid_keeps_the_plan():
+    on_grid = np.radians(60.0)
+    steps, _ = plan_opening(make_problem(), PARAMS, GOAL, (on_grid, np.radians(90.0)))
+    again, _ = plan_opening(make_problem(), PARAMS, GOAL, (on_grid, np.radians(90.0)))
+
+    assert np.isclose(final_angle(steps), final_angle(again))
+    assert all(np.isclose(np.radians(5.0) * round(s.angles[-1] / np.radians(5.0)), s.angles[-1]) for s in steps)
+
+
+def passable():
+    return plan_opening(make_problem(), PARAMS, GOAL)[1][0]
+
+
+def test_a_goal_between_grid_angles_ends_exactly_there():
+    goal = passable() + np.radians(2.0)
+
+    steps = plan_to(goal)
+
+    assert np.isclose(final_angle(steps), goal)
+    assert np.isclose(steps[-2].angles[-1], passable())
+    assert np.allclose(steps[-1].poses, steps[-1].poses[0])
+
+
+def test_a_last_turn_the_arm_cannot_make_settles_at_the_grid_angle_below():
+    scene = push_scene()
+    grid = passable()
+    goal = grid + np.radians(2.0)
+    arm = reach_band_arm(scene)
+    stuck = ArmChecks(
+        lambda pose, angle, seed: None if grid + 1e-6 < angle < grid + np.radians(1.5)
+        else arm.solve(pose, angle, seed),
+        arm.spheres, arm.max_angle, arm.reachable,
+    )
+
+    steps = plan_to(goal, {"right": stuck})
+
+    assert np.isclose(final_angle(steps), grid)
+    assert np.isclose(stop_angle((goal, np.radians(90.0)), steps), grid)
+
+
+def test_an_off_grid_goal_keeps_the_sweep_limit_and_stops_at_the_goal():
+    goal = passable() + np.radians(2.0)
+    max_sweep = np.radians(25.0)
+
+    steps = plan_to(goal, goal_params=GOAL._replace(max_sweep=max_sweep, regrasp_searches=4))
+
+    assert final_angle(steps) >= passable() - 1e-9
+    assert max(grasp_sweeps(steps)) <= max_sweep + 1e-9
+    assert stop_angle((goal, np.radians(90.0)), steps) <= goal + 1e-9
+
+
+def test_the_stop_angle_is_never_past_the_goal():
+    steps = plan_to(np.radians(60.0))
+
+    assert np.isclose(stop_angle((np.radians(60.0), np.radians(90.0)), steps), np.radians(60.0))
+
+
+def test_a_goal_whose_grid_angle_below_is_not_passable_goes_on_to_the_next_grid_angle():
+    goal = passable() - np.radians(1.0)
+
+    steps = plan_to(goal)
+
+    assert final_angle(steps) >= goal - 1e-9

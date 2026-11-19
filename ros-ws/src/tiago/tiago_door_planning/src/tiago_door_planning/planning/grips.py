@@ -59,11 +59,18 @@ def segment_grip(segment):
     return Grip(segment.trajectory.side, segment.face)
 
 
+def face_door_offset(grasp_config, action, grip):
+    """The back handle of a pull door has a push offset of its own: the front one is where the palm met the bar of a
+    push door."""
+    key = "back_door_offset" if grip.face == "back" else "door_offset"
+    return grasp_config[action][key][grip.arm]
+
+
 def grasp_offsets(config, push, scenes, normals):
     offsets = {}
     for grip in all_grips(config, scenes):
         action = grasp_action(push, grip.face)
-        door_offset = config["grasp"][action]["door_offset"][grip.arm]
+        door_offset = face_door_offset(config["grasp"], action, grip)
         offsets[grip] = grasp_offset(
             scenes[grip.face],
             normals[grip.face],
@@ -71,6 +78,19 @@ def grasp_offsets(config, push, scenes, normals):
             door_offset,
         )
     return offsets
+
+
+WRIST_JOINTS = [4, 5]
+
+
+def grip_joint_margin(planner, pushing):
+    """Per-joint margin from the limits; a push grip keeps its wrist (joints 5 and 6) further away, since tracking
+    drives those joints past their planned values as the door turns."""
+    if not pushing:
+        return planner["joint_margin"]
+    margin = np.full(7, planner["push_joint_margin"])
+    margin[WRIST_JOINTS] = planner["push_wrist_margin"]
+    return margin
 
 
 def grip_checks(config, push, scenes, offsets, normals, arms, home, grip):
@@ -84,7 +104,7 @@ def grip_checks(config, push, scenes, offsets, normals, arms, home, grip):
     )
     planner, collision = config["planner"], collision_params(config)
     pushing = grasp_action(push, grip.face) == "push"
-    joint_margin = planner["push_joint_margin"] if pushing else planner["joint_margin"]
+    joint_margin = grip_joint_margin(planner, pushing)
     max_angle = (
         np.radians(config["grasp"]["pull_limit_deg"])
         if grip.face == "front" and "back" in scenes

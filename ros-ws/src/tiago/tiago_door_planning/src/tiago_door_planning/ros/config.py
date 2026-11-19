@@ -6,7 +6,9 @@ from ..model.collision import CollisionParams
 from ..planning.door_goal import GoalParams
 from ..planning.door_planner import PlannerParams
 from ..model.door_scene import DoorDimensions
+from ..motion.compliance import ComplianceParams
 from ..sensing.door_sensing import ScanParams
+from ..sensing.wrench import ForceParams
 
 
 def section_params(params_type, section, **fixed):
@@ -42,11 +44,20 @@ def goal_params(config):
         config["goal"],
         workers=config["planner"]["workers"],
         max_sweep=np.radians(config["grasp"]["max_sweep_deg"]),
+        passable_margin=np.radians(config["planner"]["passable_margin_deg"]),
     )
 
 
 def scan_params(config):
     return section_params(ScanParams, config["scan"])
+
+
+def force_params(config):
+    return section_params(ForceParams, config["force"])
+
+
+def compliance_params(config):
+    return section_params(ComplianceParams, config["force"])
 
 
 def pipeline_rate(today, fast, speed):

@@ -16,7 +16,9 @@ from tiago_door_planning.motion.grasp_motion import (  # noqa: E402
     grasp_motions,
     grasp_offset,
     ik_seeds,
+    lateral_error,
     lift_targets,
+    overdrive_target,
     retreat_displacement,
     toward_robot,
     unrolled_offset,
@@ -189,3 +191,24 @@ def test_a_path_leaving_from_close_to_the_leaf_may_not_close_in():
     assert leaves_clear([0.01, 0.012, 0.03], 0.015)
     assert not leaves_clear([0.01, 0.008, 0.03], 0.015)
     assert not leaves_clear([0.05, 0.02, 0.01], 0.015)
+
+
+def test_lateral_error_drops_the_part_along_the_way_in():
+    error = np.array([0.01, 0.002, 0.035])
+
+    assert np.allclose(lateral_error(error, [0.0, 0.0, -0.2]), [0.01, 0.002, 0.0])
+
+
+def test_lateral_error_keeps_an_error_across_the_way_in():
+    error = np.array([0.03, 0.0, 0.0])
+
+    assert np.allclose(lateral_error(error, [0.0, 1.0, 1.0]), error)
+
+
+def test_overdrive_carries_the_last_target_on_along_the_line():
+    targets = [make_pose([0.5, 0.2, 1.0], 0.3), make_pose([0.5, 0.1, 1.0], 0.3)]
+
+    beyond = overdrive_target(targets, 0.015)
+
+    assert np.allclose(beyond[:3, 3], [0.5, 0.085, 1.0])
+    assert np.allclose(beyond[:3, :3], targets[-1][:3, :3])

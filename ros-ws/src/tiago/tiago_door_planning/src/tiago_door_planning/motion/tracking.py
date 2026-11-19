@@ -125,6 +125,14 @@ def gripper_target_in_base(scene, door_angle, grasp_offset, base_pose):
     )
 
 
+def without_shift(gripper_in_base, shift, base_pose):
+    """The gripper where it would be without the compliant shift of its target (world frame): the shift is neither door
+    motion nor tracking error."""
+    held = gripper_in_base.copy()
+    held[:3, 3] -= rotation_z(-base_pose[2]) @ np.asarray(shift, dtype=float)
+    return held
+
+
 def limit_repulsion(q, limits, margin):
     """Zero away from the limits, growing to +1 (-1) at the lower (upper) limit."""
     near_lower = np.clip((limits.lower + margin - q) / margin, 0.0, 1.0)
@@ -217,9 +225,11 @@ def tracking_step(
     gains,
     dt,
     door_at_least=None,
+    target_shift=(0.0, 0.0, 0.0),
 ):
     """The door is passive: when it runs ahead of the reference, progress jumps to the angle the gripper implies,
-    and the segment ends when the laser shows the door already past its end."""
+    and the segment ends when the laser shows the door already past its end. target_shift (world frame) moves the
+    gripper target where the hand gives way to the handle."""
     if (
         door_at_least is not None
         and door_at_least - gains.catch_up_margin >= trajectory.door_angles[-1]
@@ -227,8 +237,9 @@ def tracking_step(
         return standing_still(
             measurement, last_progress(trajectory), door_at_least, DONE
         )
+    held = without_shift(measurement.gripper_in_base, target_shift, measurement.base_pose)
     door_angle = door_angle_from_gripper(
-        scene, grasp_offset, measurement.base_pose, measurement.gripper_in_base
+        scene, grasp_offset, measurement.base_pose, held
     )
     progress = caught_up_progress(
         trajectory, progress, door_angle - gains.catch_up_margin, measurement, gains
@@ -240,7 +251,7 @@ def tracking_step(
         grasp_offset,
         measurement.base_pose,
     )
-    pose_error = local_pose_error(measurement.gripper_in_base, target)
+    pose_error = local_pose_error(held, target)
     gripper_error = float(np.linalg.norm(pose_error[:3]))
     if gripper_error > gains.gripper_error_abort:
         return standing_still(measurement, progress, door_angle, ABORT, gripper_error)

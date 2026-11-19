@@ -12,6 +12,8 @@
   <depend>gazebo_ros</depend>
   <depend>roscpp</depend>
   <depend>rospy</depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
 
   <export>
     <build_type>catkin</build_type>

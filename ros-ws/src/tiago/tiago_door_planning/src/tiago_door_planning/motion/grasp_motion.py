@@ -45,6 +45,13 @@ def unrolled_offset(planned, measured):
     return offset
 
 
+def lateral_error(error, direction):
+    """The part of error across direction: a hand stopped by contact on its way in along direction is on the handle,
+    short of the planned pose only along that way."""
+    unit = np.asarray(direction, dtype=float) / np.linalg.norm(direction)
+    return error - (error @ unit) * unit
+
+
 def _line_to_grasp(scene, angle, grasp_offset, base_pose, direction, distance, count):
     grasp = handle_pose(scene, angle) @ grasp_offset
     world_to_base = invert(pose2d_to_matrix(base_pose))
@@ -144,8 +151,25 @@ def via_path(qs, max_step):
     return path
 
 
+def overdrive_target(targets, distance):
+    """The last target carried on by distance the way the line comes in."""
+    step = targets[-1][:3, 3] - targets[-2][:3, 3]
+    beyond = targets[-1].copy()
+    beyond[:3, 3] += distance * step / np.linalg.norm(step)
+    return beyond
+
+
+def with_overdrive(arm, approach, targets, distance, iterations):
+    """The approach carried on past the grasp, so the hand meets the handle before the move ends and contact stops
+    it; the grasp configuration stays where the plan holds the handle."""
+    if distance <= 0.0:
+        return approach
+    beyond = chained_ik(arm, [overdrive_target(targets, distance)], approach[-1], iterations)
+    return approach if beyond is None else approach + beyond
+
+
 def grasp_motions(
-    arm, targets, current_q, via_qs, seeds, joint_margin, iterations, max_step
+    arm, targets, current_q, via_qs, seeds, joint_margin, iterations, max_step, overdrive=0.0
 ):
     """Candidate (move, approach) pairs: each grasp solution reached directly or through one via configuration."""
     for grasp_q in grasp_configurations(
@@ -154,5 +178,6 @@ def grasp_motions(
         approach = approach_path(arm, targets, grasp_q, iterations)
         if approach is None:
             continue
+        approach = with_overdrive(arm, approach, targets, overdrive, iterations)
         for via in [[]] + [[q] for q in via_qs]:
             yield via_path([current_q] + via + [approach[0]], max_step), approach

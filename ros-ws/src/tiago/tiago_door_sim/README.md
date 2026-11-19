@@ -6,17 +6,21 @@ ROS 1 (Melodic) package providing a Gazebo simulation environment for TIAGo door
 
 ```text
 tiago_door_sim/
+├── config/
+│   └── ft_corrected_sim.yaml  # Wrist F/T adapter: hand mass * CoM, torque bias, lever arms
 ├── launch/
 │   ├── sim_with_door.launch   # Main simulation launch file
 │   └── door_edit.launch       # Helper launch for editing the door world
 ├── models/                    # Custom Gazebo models (door, AprilTag plates)
+├── scripts/
+│   └── ft_corrected_sim.py    # Publishes /wrist_{side}_ft/corrected from the Gazebo wrist torque
 └── worlds/
     └── small_office_with_door.world   # Gazebo world
 ```
 
 ## Dependencies
 
-`gazebo_ros`, `roscpp`, `rospy`
+`gazebo_ros`, `roscpp`, `rospy`, `geometry_msgs`, `tf2_ros`
 
 ## Launch
 

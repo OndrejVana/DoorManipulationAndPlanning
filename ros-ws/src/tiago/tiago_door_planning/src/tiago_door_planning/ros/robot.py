@@ -1,3 +1,5 @@
+import collections
+
 import actionlib
 import numpy as np
 import rospy
@@ -8,14 +10,16 @@ from control_msgs.msg import (
     FollowJointTrajectoryGoal,
     FollowJointTrajectoryResult,
 )
+from geometry_msgs.msg import WrenchStamped
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 from ..sensing.door_sensing import scan_door_reading
+from ..sensing.wrench import contact_start, contact_update, in_contact, zero_offset
 from ..model.geometry import matrix_to_pose2d
 from ..motion.grasp_motion import waypoint_times
 from ..model.kinematics import arm_joint_names, load_arm_model
-from .config import scan_params
+from .config import force_params, scan_params
 from .ros_conversions import (
     joint_position_map,
     joint_positions,
@@ -26,6 +30,9 @@ SIDES = ("right", "left")
 ODOM_FRAME = "odom"
 BASE_FRAME = "base_footprint"
 SCAN_TOPIC = "/scan_raw"
+
+
+ApproachEnd = collections.namedtuple("ApproachEnd", "ended_by peak_force")
 
 
 class OpeningFailed(Exception):
@@ -66,6 +73,11 @@ def trajectory_clients(group):
     }
 
 
+def wrench_vector(msg):
+    force, torque = msg.wrench.force, msg.wrench.torque
+    return np.array([force.x, force.y, force.z, torque.x, torque.y, torque.z])
+
+
 def send_and_wait(client, goal, duration):
     client.wait_for_server(rospy.Duration(5.0))
     client.send_goal(goal)
@@ -85,6 +97,16 @@ class Robot(object):
         )
         self._tf = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self._tf)
+        self._force = force_params(config)
+        self._wrenches = {side: collections.deque(maxlen=250) for side in SIDES}
+        for side in SIDES:
+            rospy.Subscriber(
+                self.wrench_topic(side),
+                WrenchStamped,
+                self._on_wrench,
+                side,
+                queue_size=50,
+            )
         if with_moves:
             self._arm_clients = trajectory_clients("arm")
             self._hand_clients = trajectory_clients("hand")
@@ -92,6 +114,37 @@ class Robot(object):
     def _on_joint_state(self, msg):
         if "arm_left_1_joint" in msg.name:
             self._joint_state = msg
+
+    def _on_wrench(self, msg, side):
+        """Kept by arrival time: the robot's header stamps run up to half a second off the laptop clock."""
+        self._wrenches[side].append((rospy.get_time(), wrench_vector(msg)))
+
+    def wrench_topic(self, side):
+        return self._force.topic.format(side=side)
+
+    def wrench_samples(self, side, since):
+        """(arrival time, wrench) received after since."""
+        return [sample for sample in list(self._wrenches[side]) if sample[0] > since]
+
+    def require_wrench(self, sides):
+        """The opening relies on the wrist force/torque sensors, so it does not start without them."""
+        since = rospy.get_time()
+        deadline = since + self._force.wait_timeout_s
+        missing = list(sides)
+        while missing and rospy.get_time() < deadline and not rospy.is_shutdown():
+            rospy.sleep(0.1)
+            missing = [side for side in missing if not self.wrench_samples(side, since)]
+        if missing:
+            raise OpeningFailed(
+                "no wrench on %s within %.1f s; the opening needs the wrist force/torque sensors"
+                % (", ".join(self.wrench_topic(side) for side in missing), self._force.wait_timeout_s)
+            )
+
+    def zero_wrench(self, side):
+        """The residual the sensor reads with the hand touching nothing, over the last zero_s."""
+        rospy.sleep(self._force.zero_s)
+        since = rospy.get_time() - self._force.zero_s
+        return zero_offset([wrench for _, wrench in self.wrench_samples(side, since)])
 
     def q(self, side):
         return joint_positions(self._joint_state, arm_joint_names(side))
@@ -127,18 +180,46 @@ class Robot(object):
     def move_arm(self, side, qs, speeds, contact_tolerance=0.0):
         """A hand pressing on the handle stops short of the last configuration; within contact_tolerance of it the
         move counts as done."""
+        client = self._arm_clients[side]
+        goal, duration = self._arm_goal(side, qs, speeds)
+        send_and_wait(client, goal, duration)
+        self._arm_result(side, client, qs[-1], contact_tolerance)
+
+    def approach_arm(self, side, qs, speeds, contact_tolerance, zero):
+        """Moves onto the handle until the zeroed force shows contact, then cancels the move so the arm holds where it
+        touched instead of pressing on to the planned end; a controller stopping first ends it as move_arm does."""
+        client = self._arm_clients[side]
+        goal, duration = self._arm_goal(side, qs, speeds)
+        client.wait_for_server(rospy.Duration(5.0))
+        client.send_goal(goal)
+        state, seen = contact_start(), rospy.get_time()
+        deadline = seen + 3.0 * duration + 5.0
+        while not client.wait_for_result(rospy.Duration(0.02)):
+            for stamp, wrench in self.wrench_samples(side, seen):
+                state, seen = contact_update(state, stamp, wrench, zero, self._force), stamp
+                if in_contact(state, self._force):
+                    client.cancel_goal()
+                    client.wait_for_result(rospy.Duration(1.0))
+                    return ApproachEnd("force", state.peak)
+            if rospy.get_time() > deadline:
+                client.cancel_goal()
+                raise OpeningFailed("trajectory timed out")
+        stopped = self._arm_result(side, client, qs[-1], contact_tolerance)
+        return ApproachEnd("controller" if stopped else "planned end", state.peak)
+
+    def _arm_goal(self, side, qs, speeds):
         times = waypoint_times(
             [self.q(side)] + list(qs), speeds, self._config["grasp"]["min_move_s"]
         )
-        client = self._arm_clients[side]
-        state = send_and_wait(
-            client, trajectory_goal(arm_joint_names(side), qs, times), times[-1]
-        )
-        if state == GoalStatus.SUCCEEDED:
-            return
+        return trajectory_goal(arm_joint_names(side), qs, times), times[-1]
+
+    def _arm_result(self, side, client, q_end, contact_tolerance):
+        """True when the controller stopped the arm within contact_tolerance of q_end, False when it got there."""
+        if client.get_state() == GoalStatus.SUCCEEDED:
+            return False
         result = client.get_result()
         error_code = None if result is None else result.error_code
-        short_by = np.max(np.abs(self.q(side) - qs[-1]))
+        short_by = np.max(np.abs(self.q(side) - q_end))
         if (
             error_code == FollowJointTrajectoryResult.GOAL_TOLERANCE_VIOLATED
             and short_by <= contact_tolerance
@@ -148,7 +229,7 @@ class Robot(object):
                 side,
                 short_by,
             )
-            return
+            return True
         raise SegmentFailed(
             "arm trajectory failed (error code %s, %.3f rad short, %s)"
             % (error_code, short_by, client.get_goal_status_text())

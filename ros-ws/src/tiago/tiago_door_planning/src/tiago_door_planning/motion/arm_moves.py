@@ -133,6 +133,7 @@ def _clear_grasp_motion(
             grasp["joint_margin"],
             grasp["ik_iterations"],
             grasp["joint_step"],
+            grasp["approach_overdrive"],
         )
         for move, approach in candidates:
             if arm_path_clear(arm, around, move, FREE, collision) and arm_path_clear(

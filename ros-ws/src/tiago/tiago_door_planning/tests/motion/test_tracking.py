@@ -21,6 +21,7 @@ from tiago_door_planning.motion.tracking import (
     progress_rate,
     tracking_step,
     without_roll_on_bar,
+    without_shift,
 )
 from tiago_door_planning.motion.trajectory import DoorTrajectory, Reference
 
@@ -285,3 +286,28 @@ def test_progress_waits_for_a_base_left_behind_on_a_turn_in_place():
 
     assert command.progress < 0.5
 
+
+
+def test_without_shift_takes_the_world_shift_off_in_the_base_frame():
+    gripper = make_pose([0.5, 0.0, 1.0], 0.0)
+
+    held = without_shift(gripper, [0.0, 0.02, 0.0], np.array([1.0, 2.0, np.pi / 2.0]))
+
+    assert np.allclose(held[:3, 3], [0.48, 0.0, 1.0])
+
+
+def test_a_hand_that_followed_its_shifted_target_shows_no_error_and_no_door_motion():
+    scene = make_scene()
+    trajectory = make_trajectory()
+    measurement = measurement_on_target(scene, trajectory, 0.0, np.eye(6, 3))
+    shift = np.array([0.0, 0.0, 0.03])
+    moved = measurement.gripper_in_base.copy()
+    moved[:3, 3] += shift
+
+    command = tracking_step(
+        trajectory, 0.0, scene, np.eye(4), measurement._replace(gripper_in_base=moved), GAINS, 0.02,
+        target_shift=shift,
+    )
+
+    assert command.gripper_error == pytest.approx(0.0, abs=1e-9)
+    assert command.door_angle == pytest.approx(0.0, abs=1e-9)

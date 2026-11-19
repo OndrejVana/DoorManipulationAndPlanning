@@ -8,7 +8,7 @@ from .grasp_spots import grasp_pose_exists
 GoalParams = collections.namedtuple(
     "GoalParams",
     "preferred_angle pass_width handle_depth reach_min reach_max max_bearing cell_size heading_bins "
-    "extension_expansions regrasp_searches spot_regrasps_first max_sweep workers",
+    "extension_expansions regrasp_searches spot_regrasps_first max_sweep workers passable_margin",
 )
 
 
@@ -29,9 +29,16 @@ def passable_angle(scene, width, handle_depth, angle_step):
     return None
 
 
+def goal_angle(passable, margin, cap):
+    """The passable angle plus a margin, since the hand reads the door a little low, but never past the cap or below
+    the passable angle."""
+    return max(passable, min(passable + margin, cap))
+
+
 def goal_range(problem, params, angle_step):
-    """(passable angle, cap) where the cap is the largest angle up to preferred_angle with a grasp pose at
-    every step from the passable one; None when the door cannot be opened wide enough to pass.
+    """(goal angle, cap) where the cap is the largest angle up to preferred_angle with a grasp pose at every step from
+    the passable one, and the goal the passable angle plus passable_margin within the cap; None when the door cannot be
+    opened wide enough to pass.
     """
     minimum = passable_angle(
         problem.scene, params.pass_width, params.handle_depth, angle_step
@@ -43,4 +50,6 @@ def goal_range(problem, params, angle_step):
         if not grasp_pose_exists(problem, angle, params):
             break
         cap = angle
-    return None if cap is None else (minimum, cap)
+    if cap is None:
+        return None
+    return goal_angle(minimum, params.passable_margin, cap), cap

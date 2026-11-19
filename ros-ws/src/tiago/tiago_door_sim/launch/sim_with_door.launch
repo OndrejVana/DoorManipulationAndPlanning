@@ -116,6 +116,11 @@
       <arg name="use_moveit_camera" value="$(arg use_moveit_camera)"/>
     </include>
 
+    <!-- Stand-in for PAL's wrist F/T correction node -->
+    <node name="ft_corrected_sim" pkg="tiago_door_sim" type="ft_corrected_sim.py" output="screen">
+      <rosparam command="load" file="$(find tiago_door_sim)/config/ft_corrected_sim.yaml"/>
+    </node>
+
     <!-- Tuck both arms -->
     <group if="$(arg tuck_arm)">
       <!-- Ensure arm controller joints params are available for play_motion discovery -->
