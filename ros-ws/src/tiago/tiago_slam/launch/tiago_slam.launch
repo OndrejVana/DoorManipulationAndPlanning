@@ -6,7 +6,8 @@
   <arg name="depth_camera_info_topic" default="/xtion/depth_registered/camera_info"/>
   <arg name="rgb_camera_info_topic"   default="/xtion/rgb/camera_info"/>
 
-  <arg name="scan_topic"  default="/depth_scan"/>
+  <arg name="scan_topic"  default="/scan" doc="2D scan rtabmap refines links with (ICP): base laser"/>
+  <arg name="depth_scan_topic" default="/depth_scan" doc="Scan made from the head depth image"/>
   <arg name="base_frame"  default="base_footprint"/>
   <arg name="odom_frame"  default="odom"/>
   <arg name="map_frame"   default="map"/>
@@ -27,21 +28,38 @@
     <node name="relay_depth_info" pkg="topic_tools" type="relay" args="$(arg depth_camera_info_topic) $(arg depth_info)"/>
   </group>
 
-  <!-- EKF -->
-  <arg name="odometry"          default="ekf" doc="ekf: wheels + visual odometry + IMU on slam_tf; wheel: wheel odometry from /tf"/>
+  <!-- Odometry the SLAM builds on -->
+  <arg name="odometry"          default="icp" doc="icp: laser scan-to-map odometry on top of the wheels; ekf: wheels + visual odometry + IMU; wheel: wheel odometry from /tf"/>
   <arg name="slam_tf"           default="/slam/tf"/>
   <arg name="imu_yaw_rate_sign" default="-1.0" doc="tiago-114c's /base_imu reports turns with the wrong sign"/>
   <arg name="ekf" value="$(eval arg('odometry') == 'ekf')"/>
+  <arg name="icp" value="$(eval arg('odometry') == 'icp')"/>
+  <!-- ekf and icp run the SLAM on its own TF topic; slam_bridge hands map -> odom to /tf -->
+  <arg name="slam_tree" value="$(eval arg('odometry') in ('ekf', 'icp'))"/>
+  <arg name="slam_odom_frame" value="$(eval 'odom_icp' if arg('icp') else arg('odom_frame'))"/>
 
-  <group if="$(arg ekf)">
+  <group if="$(arg slam_tree)">
     <node name="slam_tf_filter" pkg="tiago_slam" type="tf_filter.py">
       <param name="odom_frame" value="$(arg odom_frame)"/>
       <param name="base_frame" value="$(arg base_frame)"/>
+      <param name="keep_odom_base" value="$(arg icp)"/>
       <remap from="tf_in"         to="/tf"/>
       <remap from="tf_static_in"  to="/tf_static"/>
       <remap from="tf_out"        to="$(arg slam_tf)"/>
       <remap from="tf_static_out" to="$(arg slam_tf)_static"/>
     </node>
+    <node name="slam_bridge" pkg="tiago_slam" type="slam_bridge.py">
+      <param name="map_frame"  value="$(arg map_frame)"/>
+      <param name="odom_frame" value="$(arg odom_frame)"/>
+      <param name="slam_odom_frame" value="$(arg slam_odom_frame)"/>
+      <param name="base_frame" value="$(arg base_frame)"/>
+      <remap from="wheel_odom" to="/mobile_base_controller/odom"/>
+      <remap from="slam_tf"    to="$(arg slam_tf)"/>
+      <remap from="slam_pose"  to="/slam_pose"/>
+    </node>
+  </group>
+
+  <group if="$(arg ekf)">
     <node name="slam_imu_fix" pkg="tiago_slam" type="imu_fix.py">
       <param name="yaw_rate_sign" value="$(arg imu_yaw_rate_sign)"/>
       <remap from="imu_in"     to="/base_imu"/>
@@ -54,14 +72,6 @@
       <remap from="/tf"        to="$(arg slam_tf)"/>
       <remap from="/tf_static" to="$(arg slam_tf)_static"/>
     </node>
-    <node name="slam_bridge" pkg="tiago_slam" type="slam_bridge.py">
-      <param name="map_frame"  value="$(arg map_frame)"/>
-      <param name="odom_frame" value="$(arg odom_frame)"/>
-      <param name="base_frame" value="$(arg base_frame)"/>
-      <remap from="wheel_odom" to="/mobile_base_controller/odom"/>
-      <remap from="slam_tf"    to="$(arg slam_tf)"/>
-      <remap from="slam_pose"  to="/slam_pose"/>
-    </node>
   </group>
 
   <node name="kill_head_nodes" pkg="tiago_slam" type="kill_head_nodes.py" output="screen"/>
@@ -72,14 +82,14 @@
         output="screen">
     <remap from="image"       to="$(arg depth)"/>
     <remap from="camera_info" to="$(arg depth_info)"/>
-    <remap from="scan"        to="$(arg scan_topic)"/>
+    <remap from="scan"        to="$(arg depth_scan_topic)"/>
     <param name="output_frame_id" value="$(arg base_frame)"/>
     <param name="scan_height"     value="10"/>
     <param name="range_min"       value="0.45"/>
     <param name="range_max"       value="1.90"/>
   </node>
 
-  <node name="rgbd_odometry" pkg="rtabmap_ros" type="rgbd_odometry" output="screen">
+  <node unless="$(arg icp)" name="rgbd_odometry" pkg="rtabmap_ros" type="rgbd_odometry" output="screen">
     <param name="frame_id"      value="$(arg base_frame)"/>
     <param name="odom_frame_id" value="$(arg odom_frame)"/>
 
@@ -110,7 +120,7 @@
     <param name="tf_delay"   value="0.01"/>
   </node>
 
-  <node name="rtabmap" pkg="rtabmap_ros" type="rtabmap" output="screen" args="--delete_db_on_start">
+  <node unless="$(arg icp)" name="rtabmap" pkg="rtabmap_ros" type="rtabmap" output="screen" args="--delete_db_on_start">
     <param name="frame_id"     value="$(arg base_frame)"/>
     <param name="odom_frame_id" value="$(eval '' if arg('ekf') else arg('odom_frame'))"/>
     <param name="map_frame_id"  value="$(arg map_frame)"/>
@@ -140,11 +150,14 @@
     <param name="RGBD/LinearUpdate"  value="0.2"/>
     <param name="RGBD/AngularUpdate" value="0.15"/>
     <param name="Reg/Force3DoF"      value="true"/>
-    <param name="Reg/Strategy"       value="1"/>
+    <param name="Reg/Strategy"       value="2"/>  <!-- visual, refined by ICP on the base laser -->
+    <param name="RGBD/NeighborLinkRefining" value="true"/>
 
     <param name="Icp/VoxelSize"                value="0.05"/>
-    <param name="Icp/MaxCorrespondenceDistance" value="0.5"/>
-    <param name="Icp/Iterations"               value="10"/>
+    <param name="Icp/MaxCorrespondenceDistance" value="0.15"/>
+    <param name="Icp/Iterations"               value="30"/>
+    <param name="Icp/Epsilon"                  value="0.001"/>
+    <param name="Icp/RangeMax"                 value="8.0"/>
 
     <param name="Grid/FromDepth" value="true"/>
     <param name="Grid/RangeMax"  value="1.90"/>
@@ -159,8 +172,90 @@
   </node>
 
 
-  <!-- With the EKF slam_bridge publishes /slam_pose. -->
-  <node unless="$(arg ekf)" name="slam_pose_publisher" pkg="tiago_slam" type="tf_to_pose.py" output="screen">
+
+<!-- ICP Odometry -->
+  <group if="$(arg icp)">
+    <node name="icp_odometry" pkg="rtabmap_ros" type="icp_odometry" output="screen">
+      <remap from="scan" to="$(arg scan_topic)"/>
+      <remap from="odom" to="/odom_icp"/>
+      <remap from="/tf"        to="$(arg slam_tf)"/>
+      <remap from="/tf_static" to="$(arg slam_tf)_static"/>
+      <param name="frame_id"       value="$(arg base_frame)"/>
+      <param name="odom_frame_id"  value="$(arg slam_odom_frame)"/>
+      <param name="guess_frame_id" value="$(arg odom_frame)"/>
+      <param name="publish_tf"     value="true"/>
+      <param name="wait_for_transform_duration" value="0.2"/>
+      <param name="Reg/Force3DoF"  value="true"/>
+      <param name="Odom/Strategy"  value="0"/>
+      <param name="Odom/Holonomic" value="false"/>
+      <param name="Odom/ResetCountdown"  value="1"/>
+      <param name="Odom/ScanKeyFrameThr" value="0.7"/>
+      <param name="OdomF2M/ScanMaxSize"        value="3000"/>
+      <param name="OdomF2M/ScanSubtractRadius" value="0.02"/>
+      <param name="Icp/VoxelSize"                 value="0.02"/>
+      <param name="Icp/PointToPlane"              value="true"/>
+      <param name="Icp/PointToPlaneK"             value="10"/>
+      <param name="Icp/MaxCorrespondenceDistance" value="0.05"/>
+      <param name="Icp/Iterations"        value="30"/>
+      <param name="Icp/Epsilon"           value="0.0001"/>
+      <param name="Icp/MaxTranslation"    value="0.3"/>
+      <param name="Icp/MaxRotation"       value="0.5"/>
+      <param name="Icp/CorrespondenceRatio" value="0.2"/>
+      <param name="Icp/RangeMax"          value="9.0"/>
+    </node>
+
+    <node name="rtabmap" pkg="rtabmap_ros" type="rtabmap" output="screen" args="--delete_db_on_start">
+      <param name="frame_id"        value="$(arg base_frame)"/>
+      <param name="odom_frame_id"   value=""/>
+      <param name="map_frame_id"    value="$(arg map_frame)"/>
+      <remap from="/tf"        to="$(arg slam_tf)"/>
+      <remap from="/tf_static" to="$(arg slam_tf)_static"/>
+      <param name="subscribe_depth" value="true"/>
+      <param name="subscribe_scan"  value="true"/>
+      <param name="approx_sync"     value="true"/>
+      <param name="queue_size"      value="50"/>
+      <param name="wait_for_transform_duration" value="0.2"/>
+      <remap from="rgb/image"       to="$(arg rgb)"/>
+      <remap from="depth/image"     to="$(arg depth)"/>
+      <remap from="rgb/camera_info" to="$(arg rgb_info)"/>
+      <remap from="scan"            to="$(arg scan_topic)"/>
+      <remap from="odom"            to="/odom_icp"/>
+      <remap from="grid_map"        to="/map"/>
+      <param name="publish_tf"      value="true"/>
+      <param name="tf_delay"        value="0.05"/>
+
+      <!-- Visual loop closure detection, laser ICP for every link -->
+      <param name="Rtabmap/DetectionRate" value="2"/>
+      <param name="RGBD/LinearUpdate"     value="0.1"/>
+      <param name="RGBD/AngularUpdate"    value="0.1"/>
+      <param name="RGBD/ProximityBySpace" value="true"/>
+      <param name="RGBD/ProximityPathMaxNeighbors" value="10"/>
+      <param name="RGBD/ProximityMaxGraphDepth"    value="0"/>
+      <param name="RGBD/OptimizeMaxError" value="3.0"/>
+      <param name="Mem/NotLinkedNodesKept" value="false"/>
+      <param name="Mem/STMSize"           value="30"/>
+      <param name="Mem/LaserScanNormalK"  value="10"/>
+      <param name="Reg/Strategy"          value="1"/>
+      <param name="Reg/Force3DoF"         value="true"/>
+      <param name="Icp/VoxelSize"                 value="0.05"/>
+      <param name="Icp/PointToPlane"              value="true"/>
+      <param name="Icp/PointToPlaneK"             value="10"/>
+      <param name="Icp/MaxCorrespondenceDistance" value="0.1"/>
+      <param name="Icp/Iterations"        value="30"/>
+      <param name="Icp/Epsilon"           value="0.0001"/>
+      <param name="Icp/CorrespondenceRatio" value="0.2"/>
+      <param name="Icp/MaxTranslation"    value="1.0"/>
+      <param name="Icp/RangeMax"          value="9.0"/>
+      <!-- Occupancy grid from the laser -->
+      <param name="Grid/Sensor"     value="0"/>
+      <param name="Grid/RangeMax"   value="6.0"/>
+      <param name="Grid/CellSize"   value="0.05"/>
+      <param name="Grid/RayTracing" value="true"/>
+    </node>
+  </group>
+
+  <!-- With ekf or icp slam_bridge publishes /slam_pose. -->
+  <node unless="$(arg slam_tree)" name="slam_pose_publisher" pkg="tiago_slam" type="tf_to_pose.py" output="screen">
     <param name="from_frame"   value="$(arg map_frame)"/>
     <param name="to_frame"     value="$(arg base_frame)"/>
     <param name="output_topic" value="/slam_pose"/>

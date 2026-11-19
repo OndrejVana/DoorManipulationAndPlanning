@@ -25,10 +25,10 @@ speed:
   not_below_today: [linear_speed, angular_speed, max_linear, max_angular, joint_velocity_fraction]
 
 door:
-  width: 0.90
+  width: 0.95  # lab door (measured 2026-11-19); the sim doors are 0.90
   thickness: 0.04
   height: 2.00
-  wall_thickness: 0.15
+  wall_thickness: 0.06  # frame/wall standing out of the door face on the push side
   wall_length: 1.00
 
 arm:
@@ -43,6 +43,7 @@ collision:
   margin: 0.03
 
 tracking:
+  frame: map
   rate_hz: 50.0
   command_lookahead_s: 0.1
   max_command_lead: 0.15
@@ -81,7 +82,7 @@ grasp:
   push:
     rpy: [-1.5708, 0.0, -1.5708]
     door_offset:
-      right: [-0.03, 0.01, -0.02]
+      right: [0.05, 0.01, -0.02]  # 5 cm along the lever: the handle is 9 cm from the frame
       left: [0.01, 0.01, 0.013]
     back_door_offset:
       right: [-0.03, 0.01, -0.02]
@@ -95,7 +96,7 @@ grasp:
   min_move_s: 1.0
   max_joint_speed_fraction: 0.75
   hand_open: [0.0, 0.0, 0.0]
-  hand_closed: [2.0, 2.0, 0.8]
+  hand_closed: [6.2, 6.8, 9.2]  # thumb, index, mrl; PAL close_right. The fingers stop on the lever.
   hand_duration_s: 2.0
   max_sweep_deg: 45.0
   pull_limit_deg: 45.0

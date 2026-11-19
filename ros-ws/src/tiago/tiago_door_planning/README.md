@@ -9,9 +9,8 @@ the plan closed-loop with base and arm together.
 ## Quick start
 
 ```bash
-# from ros-ws/docker
-make build && make shell
-roslaunch tiago_door_planning door_opening.launch   # rviz:=true to watch the plan
+roslaunch tiago_door_planning door_opening.launch
+rviz -d $(rospack find tiago_door_planning)/rviz/door_opening.rviz   # separate terminal
 rosrun tiago_door_planning run_open_door.py _push:=false
 ```
 
@@ -62,7 +61,7 @@ tiago_door_planning/
 ├── config/
 │   └── door_motion.yaml           # All parameters
 ├── launch/
-│   ├── door_opening.launch        # Tracking server + opening server
+│   ├── door_opening.launch        # Tracking server + opening server + plan markers
 │   └── door_tracking.launch       # Tracking server only
 ├── rviz/
 │   └── door_opening.rviz          # Door plan markers, laser, door poses

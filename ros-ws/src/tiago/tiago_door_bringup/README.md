@@ -13,47 +13,6 @@ This package provides a unified launch file (`main.launch`) that orchestrates al
 - **Behavior Tree**: High-level door approach coordination
 - **VICON**: Optional motion capture ground truth
 
-## Quick Start
-
-### Basic Simulation with All Features
-
-```bash
-# Launch
-roslaunch tiago_door_bringup main.launch
-
-# Clean Map before each run
-rm ~/.ros/rtabmap.db
-```
-
-This will launch:
-
-- Gazebo simulation with TIAGo and door world
-- SLAM system
-- AprilTag door detection
-- Navigation control
-- Behavior tree executor
-
-### Customized Launch
-
-You can enable/disable components and configure settings via arguments:
-
-```bash
-# Disable behavior tree, just run perception and navigation
-roslaunch tiago_door_bringup main.launch use_behavior_tree:=false
-
-# Run only SLAM, no door perception or navigation
-roslaunch tiago_door_bringup main.launch \
-  use_door_perception:=false \
-  use_navigation:=false \
-  use_behavior_tree:=false
-
-# Different robot model (tiago++ is default; use titanium/steel/iron for single-arm)
-roslaunch tiago_door_bringup main.launch robot:=titanium
-
-# With VICON ground truth
-roslaunch tiago_door_bringup main.launch use_vicon:=true
-```
-
 ## Launch Arguments
 
 ### Global Configuration
@@ -96,65 +55,31 @@ The bringup integrates these packages:
 
 ## Usage Examples
 
-### 1. Testing Door Detection Only
+### Running by the main bringup
 
 ```bash
-# Launch sim + perception, no autonomous navigation
-roslaunch tiago_door_bringup main.launch \
-  use_navigation:=false \
-  use_behavior_tree:=false
-
-# Manually teleop robot to see door detection
-rosrun key_teleop key_teleop.py /key_vel:=/mobile_base_controller/cmd_vel
-```
-
-### 2. SLAM Testing
-
-```bash
-# Just SLAM and robot
-roslaunch tiago_door_bringup main.launch \
-  use_door_perception:=false \
-  use_navigation:=false \
-  use_behavior_tree:=false
-```
-
-```bash
-# Just SLAM and robot
-roslaunch tiago_door_bringup main.launch use_door_perception:=false
-```
-
-### 3. Complete Autonomous Run
-
-```bash
+# default selection
 roslaunch tiago_door_bringup main.launch
 ```
 
-### 4. Real Robot Deployment
+### Manually teleop robot to see door detection
+
+Teleoperation without the controller by keyboard.
 
 ```bash
-roslaunch tiago_door_bringup main.launch simulation:=false use_door_perception:=false use_navigation:=false use_arm_manipulation:=false
+rosrun key_teleop key_teleop.py /key_vel:=/mobile_base_controller/cmd_vel
 ```
 
-- Set ROS master to the robot (see robot manual, pages 63–64):
+### Cleanup of a old map
 
 ```bash
-export ROS_MASTER_URI=http://tiago-114c:11311
-
-# Ethernet
-export ROS_IP=10.68.0.128
-
-
-# Wi-Fi
-export ROS_IP=192.168.251.123
+rm ~/.ros/rtabmap.db
 ```
-
-- Robot/laptop clock sync: [ROBOT_TIME_SYNC.md](../../../../ROBOT_TIME_SYNC.md)
 
 ## RViz Configuration
 
-A default RViz configuration is available at `rviz/tiago_door_nav.rviz`. Create your own:
+A default RViz configuration is available at `rviz/tiago_door_nav.rviz`.
 
 ```bash
-rviz
-# Configure displays, save to: src/tiago/tiago_door_bringup/rviz/tiago_door_nav.rviz
+rviz -d $(rospack find tiago_door_bringup)/rviz/tiago_door_main.rviz
 ```

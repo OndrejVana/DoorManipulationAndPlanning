@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Hands the SLAM pose to the global TF as map -> odom, on top of the robot's own wheel odometry."""
+"""Hands the SLAM pose to the global TF as map -> odom, on top of the robot's own wheel odometry.
+
+ekf: the SLAM tree is map -> odom -> base (EKF); map -> odom follows from the EKF pose and the wheel pose.
+icp: the SLAM tree is map -> odom_icp -> odom -> base (wheels); map -> odom is the first two composed."""
 
 import collections
 
@@ -56,6 +59,7 @@ class SlamBridge(object):
     def __init__(self):
         self._map = rospy.get_param("~map_frame", "map")
         self._odom = rospy.get_param("~odom_frame", "odom")
+        self._slam_odom = rospy.get_param("~slam_odom_frame", self._odom)
         self._base = rospy.get_param("~base_frame", "base_footprint")
         self._tf_delay = rospy.get_param("~tf_delay", 0.05)
         self._map_from_slam_odom = None
@@ -76,6 +80,8 @@ class SlamBridge(object):
         )
         while self._wheel and self._wheel[-1][0] - self._wheel[0][0] > WHEEL_HISTORY_S:
             self._wheel.popleft()
+        if self._slam_odom != self._odom and self._map_from_odom is not None:
+            self._publish_pose(msg.header.stamp, compose(self._map_from_odom, self._wheel[-1][1]))
 
     def _on_slam_tf(self, msg):
         for transform in msg.transforms:
@@ -83,10 +89,17 @@ class SlamBridge(object):
                 "/"
             ), transform.child_frame_id.lstrip("/")
             pose = pose2d(transform.transform.translation, transform.transform.rotation)
-            if parent == self._map and child == self._odom:
+            if parent == self._map and child == self._slam_odom:
                 self._map_from_slam_odom = pose
             elif (
+                parent == self._slam_odom
+                and child == self._odom
+                and self._map_from_slam_odom is not None
+            ):
+                self._map_from_odom = compose(self._map_from_slam_odom, pose)
+            elif (
                 parent == self._odom
+                and self._slam_odom == self._odom
                 and child == self._base
                 and self._map_from_slam_odom is not None
             ):
@@ -99,6 +112,9 @@ class SlamBridge(object):
         if wheel is None:
             return
         self._map_from_odom = compose(map_from_base, inverse(wheel))
+        self._publish_pose(stamp, map_from_base)
+
+    def _publish_pose(self, stamp, map_from_base):
         pose = PoseStamped()
         pose.header.stamp, pose.header.frame_id = stamp, self._map
         pose.pose.position.x, pose.pose.position.y = map_from_base[:2]

@@ -98,6 +98,8 @@ class DoorTrackingServer(object):
     def __init__(self):
         self._config = apply_pipeline_speed(rospy.get_param("~"))
         self._tracking = self._config["tracking"]
+        # Frame the base is tracked in: map follows the SLAM, which corrects the wheel odometry's turning error
+        self._frame = self._tracking.get("frame", ODOM_FRAME)
         self._force = force_params(self._config)
         self._compliance = compliance_params(self._config)
         self._robot = Robot(self._config)
@@ -124,9 +126,9 @@ class DoorTrackingServer(object):
         self._scan = msg
 
     def _execute(self, goal):
-        odom_from_map = self._robot.lookup(ODOM_FRAME, goal.hinge_pose.header.frame_id)
-        self._scene = self._scene_in_odom(goal, odom_from_map)
-        trajectory = self._trajectory_in_odom(goal, odom_from_map)
+        frame_from_goal = self._robot.lookup(self._frame, goal.hinge_pose.header.frame_id)
+        self._scene = self._scene_in_frame(goal, frame_from_goal)
+        trajectory = self._trajectory_in_frame(goal, frame_from_goal)
         self._min_door_angle = trajectory.door_angles[0] - self._lost_grasp_tolerance()
         self._scan_door = (None, None)
         arm = self._robot.load_arm(goal.arm)
@@ -156,19 +158,19 @@ class DoorTrackingServer(object):
             failure,
         )
 
-    def _scene_in_odom(self, goal, odom_from_map):
-        hinge = odom_from_map @ pose_msg_to_matrix(goal.hinge_pose.pose)
-        handle = odom_from_map @ pose_msg_to_matrix(goal.handle_pose.pose)
+    def _scene_in_frame(self, goal, frame_from_goal):
+        hinge = frame_from_goal @ pose_msg_to_matrix(goal.hinge_pose.pose)
+        handle = frame_from_goal @ pose_msg_to_matrix(goal.handle_pose.pose)
         return scene_from_door_poses(
             hinge, handle, goal.hinge_side, goal.push, door_dimensions(self._config)
         )
 
     @staticmethod
-    def _trajectory_in_odom(goal, odom_from_map):
+    def _trajectory_in_frame(goal, frame_from_goal):
         poses_in_map = np.column_stack([goal.base_x, goal.base_y, goal.base_yaw])
         poses = np.array(
             [
-                matrix_to_pose2d(odom_from_map @ pose2d_to_matrix(p))
+                matrix_to_pose2d(frame_from_goal @ pose2d_to_matrix(p))
                 for p in poses_in_map
             ]
         )
@@ -298,7 +300,7 @@ class DoorTrackingServer(object):
         )
         if self._filtered is None:
             return offset
-        sensor = self._robot.lookup(ODOM_FRAME, "wrist_%s_ft_link" % side)
+        sensor = self._robot.lookup(self._frame, "wrist_%s_ft_link" % side)
         wrench = force_in_frame(sensor[:3, :3], self._filtered)
         axes = door_axes(self._scene, door_angle)
         self._door_force = axes @ wrench[:3]
@@ -393,7 +395,7 @@ class DoorTrackingServer(object):
 
     def _measure(self, arm):
         q = self._robot.q(arm.side)
-        base_pose = self._robot.base_pose(ODOM_FRAME)
+        base_pose = self._robot.base_pose(self._frame)
         return Measurement(base_pose, q, gripper_pose(arm, q), gripper_jacobian(arm, q))
 
     def _door_from_scan(self):
@@ -405,7 +407,7 @@ class DoorTrackingServer(object):
             return None
         if self._scan_door[0] != scan.header.stamp:
             reading = self._robot.door_reading(
-                scan, ODOM_FRAME, self._scene, self._min_door_angle
+                scan, self._frame, self._scene, self._min_door_angle
             )
             self._scan_door = (scan.header.stamp, reading)
         return self._scan_door[1]

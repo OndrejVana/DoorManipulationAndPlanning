@@ -9,6 +9,8 @@ class TfFilter(object):
     def __init__(self):
         self._odom = rospy.get_param("~odom_frame", "odom")
         self._base = rospy.get_param("~base_frame", "base_footprint")
+        # icp odometry takes the wheel odom -> base as its guess, so it stays in the copy
+        self._keep_odom_base = rospy.get_param("~keep_odom_base", False)
         self._tf = rospy.Publisher("tf_out", TFMessage, queue_size=100)
         self._tf_static = rospy.Publisher(
             "tf_static_out", TFMessage, queue_size=10, latch=True
@@ -23,7 +25,8 @@ class TfFilter(object):
             for t in transforms
             if t.child_frame_id.lstrip("/") != self._odom
             and not (
-                t.header.frame_id.lstrip("/") == self._odom
+                not self._keep_odom_base
+                and t.header.frame_id.lstrip("/") == self._odom
                 and t.child_frame_id.lstrip("/") == self._base
             )
         ]

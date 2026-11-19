@@ -1,15 +1,15 @@
 <?xml version="1.0"?>
 <launch>
   <!-- Global Configuration -->
-  <arg name="simulation" default="true" doc="true = Gazebo sim, false = real robot"/>
+  <arg name="simulation" default="false" doc="true = Gazebo sim, false = real robot"/>
   <arg name="use_slam" default="true" doc="Enable SLAM for mapping and localization"/>
   <arg name="use_door_perception" default="true" doc="Enable AprilTag-based door detection"/>
-  <arg name="use_navigation" default="true" doc="Enable navigation (move_base) control"/>
+  <arg name="use_navigation" default="false" doc="Enable navigation (move_base) control"/>
   <arg name="use_door_planning" default="false" doc="Enable door-opening trajectory planning"/>
-  <arg name="use_arm_manipulation" default="true" doc="Enable arm motion planning and gripper control"/>
+  <arg name="use_arm_manipulation" default="false" doc="Enable arm motion planning and gripper control"/>
   <arg name="use_behavior_tree" default="false" doc="Enable BT-based door navigation"/>
   <arg name="use_vicon" default="false" doc="Enable VICON motion capture system"/>
-  <arg name="rviz" default="true" doc="Launch RViz for visualization"/>
+  <arg name="rviz" default="false" doc="Launch RViz for visualization"/>
 
   
   <!-- Simulation Configuration -->
@@ -96,7 +96,7 @@
   <!-- 9. Visualization (RViz) -->
   <group if="$(arg rviz)">
     <node pkg="rviz" type="rviz" name="rviz" output="screen"
-          args="-d $(find tiago_door_bringup)/rviz/tiago_door_nav.rviz" />
+          args="-d $(find tiago_door_bringup)/rviz/tiago_door_main.rviz" />
   </group>
 
   <!-- Logging & Status -->

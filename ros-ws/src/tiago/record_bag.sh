@@ -46,6 +46,22 @@ TOPICS+=(
   /torso_controller/state /torso_controller/follow_joint_trajectory/goal
   /head_controller/state /head_controller/follow_joint_trajectory/goal
 )
+# Door opening stack: what it saw, planned and did. Small next to the camera; /rosout_agg keeps the node logs.
+TOPICS+=(
+  /rosout_agg
+  # SLAM (tiago_slam): map -> odom is in /tf; /slam/tf holds the odom_icp correction
+  /slam_pose /odom_icp /info /map /slam/tf /slam/tf_static
+  # Door perception (tiago_door_localization)
+  /tag_detections
+  /door/tag_id /door/hinge_side /door/interaction /door/door_side
+  /door/tag_pose_map /door/hinge_pose_map /door/handle_pose_map /door/hinge_axis_map
+  /door/plane_map /door/doorway_pose_map
+  # Door opening (tiago_door_planning)
+  /open_door/goal /open_door/feedback /open_door/result
+  /execute_door_segment/goal /execute_door_segment/feedback /execute_door_segment/result
+  /door_plan_viz/markers
+  /tiago_move_base/move_base/global_costmap/costmap
+)
 
 if ! rostopic list > /dev/null 2>&1; then
   echo "[record_bag] No ROS master at ${ROS_MASTER_URI:-<unset>}" >&2

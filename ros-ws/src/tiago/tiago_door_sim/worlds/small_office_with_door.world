@@ -4878,9 +4878,9 @@
           </geometry>
           <material>
             <script>
-              <uri>model://apriltag_plate_1/materials/scripts</uri>
-              <uri>model://apriltag_plate_1/materials/textures</uri>
-              <name>Apriltag/Tag1</name>
+              <uri>model://apriltag_plate_2/materials/scripts</uri>
+              <uri>model://apriltag_plate_2/materials/textures</uri>
+              <name>Apriltag/Tag2</name>
             </script>
           </material>
           <cast_shadows>0</cast_shadows>
@@ -9677,9 +9677,9 @@
           </geometry>
           <material>
             <script>
-              <uri>model://apriltag_plate_2/materials/scripts</uri>
-              <uri>model://apriltag_plate_2/materials/textures</uri>
-              <name>Apriltag/Tag2</name>
+              <uri>model://apriltag_plate_1/materials/scripts</uri>
+              <uri>model://apriltag_plate_1/materials/textures</uri>
+              <name>Apriltag/Tag1</name>
             </script>
           </material>
           <cast_shadows>0</cast_shadows>

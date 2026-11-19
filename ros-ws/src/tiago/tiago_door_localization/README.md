@@ -16,10 +16,6 @@ tiago_door_localization/
     └── doorway_pose_node.py           # Fuses hinge+handle → stable doorway pose
 ```
 
-## Dependencies
-
-`rospy`, `tf2_ros`, `tf2_geometry_msgs`, `geometry_msgs`, `sensor_msgs`, `nav_msgs`, `visualization_msgs`, `apriltag_ros`
-
 ## Launch
 
 ```bash
