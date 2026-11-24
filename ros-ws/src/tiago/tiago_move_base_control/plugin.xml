@@ -3,6 +3,6 @@
     name="tiago_move_base_control/DoorMaskLayer"
     type="tiago_move_base_control::DoorMaskLayer"
     base_class_type="costmap_2d::Layer">
-    <description>Masks a rectangular region around the detected door pose.</description>
+    <description>Clears the cells inside a polygon (the door swing sector) while enabled.</description>
   </class>
 </library>

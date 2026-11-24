@@ -4,10 +4,10 @@
   <arg name="simulation" default="false" doc="true = Gazebo sim, false = real robot"/>
   <arg name="use_slam" default="true" doc="Enable SLAM for mapping and localization"/>
   <arg name="use_door_perception" default="true" doc="Enable AprilTag-based door detection"/>
-  <arg name="use_navigation" default="false" doc="Enable navigation (move_base) control"/>
-  <arg name="use_door_planning" default="false" doc="Enable door-opening trajectory planning"/>
-  <arg name="use_arm_manipulation" default="false" doc="Enable arm motion planning and gripper control"/>
-  <arg name="use_behavior_tree" default="false" doc="Enable BT-based door navigation"/>
+  <arg name="use_navigation" default="true" doc="move_base with the door-masked costmap open_door plans on"/>
+  <arg name="use_door_planning" default="true" doc="open_door / pass_door / execute_door_segment servers"/>
+  <arg name="use_mission" default="true" doc="Door mission; idles until rosservice call /door_mission/start"/>
+  <arg name="mission_dry_run" default="false" doc="Mission plans only: nothing moves"/>
   <arg name="use_vicon" default="false" doc="Enable VICON motion capture system"/>
   <arg name="rviz" default="false" doc="Launch RViz for visualization"/>
 
@@ -26,11 +26,11 @@
   <arg name="gui" default="true" doc="Show Gazebo GUI"/>
   <arg name="gzpose" default="-x 0.0 -y 0.0 -z 0.0 -R 0.0 -P 0.0 -Y 0.0"/>
 
+  <!-- Door model: the sim's doors differ from the lab door -->
+  <arg name="door_motion_overrides" default="$(eval find('tiago_door_planning') + '/config/door_motion_sim.yaml' if arg('simulation') else '')"/>
+
   <!-- Door Perception Config -->
-  <arg name="door_config" default="$(find tiago_door_localization)/config/apriltag_two_sided_door.yaml"/>
-  
-  <!-- Navigation Configuration -->
-  <arg name="approach_cfg" default="$(find tiago_move_base_control)/config/door_approach.yaml"/>
+  <arg name="door_config" default="$(eval find('tiago_door_localization') + '/config/' + ('apriltag_sim_doors.yaml' if arg('simulation') else 'apriltag_two_sided_door.yaml'))"/>
 
   <!-- Launch Components -->
 
@@ -68,40 +68,33 @@
 
   <!-- 4. Navigation Control -->
   <group if="$(arg use_navigation)">
-    <include file="$(find tiago_move_base_control)/launch/door_nav.launch">
-      <arg name="approach_cfg" value="$(arg approach_cfg)"/>
-    </include>
+    <include file="$(find tiago_move_base_control)/launch/tiago_move_base.launch"/>
   </group>
 
   <!-- 5. Door Opening (plan, grasp, track, regrasp) -->
   <group if="$(arg use_door_planning)">
-    <include file="$(find tiago_door_planning)/launch/door_opening.launch"/>
+    <include file="$(find tiago_door_planning)/launch/door_opening.launch">
+      <arg name="overrides" value="$(arg door_motion_overrides)"/>
+    </include>
   </group>
 
-  <!-- 6. Arm Manipulation -->
-  <group if="$(arg use_arm_manipulation)">
-    <include file="$(find tiago_arm_manipulation)/launch/arm_manipulation.launch"/>
+  <!-- 6. Door mission (lock the door, approach, open, drive through) -->
+  <group if="$(arg use_mission)">
+    <include file="$(find tiago_door_mission)/launch/door_mission.launch">
+      <arg name="dry_run" value="$(arg mission_dry_run)"/>
+      <arg name="door_motion_overrides" value="$(arg door_motion_overrides)"/>
+    </include>
   </group>
 
-  <!-- 7. Behavior Tree -->
-  <group if="$(arg use_behavior_tree)">
-    <include file="$(find tiago_door_bt)/launch/door_bt.launch"/>
-  </group>
-
-  <!-- 8. VICON (Optional) -->
+  <!-- 7. VICON (Optional) -->
   <group if="$(arg use_vicon)">
     <include file="$(find tiago_vicon)/launch/tiago_vicon.launch"/>
   </group>
 
-  <!-- 9. Visualization (RViz) -->
+  <!-- 8. Visualization (RViz) -->
   <group if="$(arg rviz)">
     <node pkg="rviz" type="rviz" name="rviz" output="screen"
           args="-d $(find tiago_door_bringup)/rviz/tiago_door_main.rviz" />
   </group>
-
-  <!-- Logging & Status -->
-  <node pkg="rostopic" type="rostopic" name="log_startup"
-        args="echo -p 'TIAGo Door Navigation System Started'" output="screen"
-        launch-prefix="bash -c 'sleep 3; '" />
 
 </launch>

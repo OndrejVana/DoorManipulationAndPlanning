@@ -1,85 +1,52 @@
 # TIAGo++ Door Bringup Package
 
-Main entry point for launching the complete TIAGo++ dual-arm door navigation system.
+Main entry point for the TIAGo++ door-opening system: one `main.launch` for sim and robot, plus bag replay.
 
-## Overview
-
-This package provides a unified launch file (`main.launch`) that orchestrates all components of the door navigation project:
-
-- **Simulation/Robot**: Gazebo simulation or real robot bringup
-- **SLAM**: Mapping and localization using tiago_slam
-- **Door Perception**: AprilTag-based door detection and modeling
-- **Navigation**: Move_base control for autonomous navigation
-- **Behavior Tree**: High-level door approach coordination
-- **VICON**: Optional motion capture ground truth
-
-## Launch Arguments
-
-### Global Configuration
-
-- `simulation` (default: `true`) - Use Gazebo simulation vs real robot
-- `use_slam` (default: `true`) - Enable SLAM system
-- `use_door_perception` (default: `true`) - Enable AprilTag door detection
-- `use_navigation` (default: `true`) - Enable navigation control
-- `use_behavior_tree` (default: `true`) - Enable BT-based door approach
-- `use_vicon` (default: `false`) - Enable VICON motion capture
-- `rviz` (default: `true`) - Launch RViz visualization
-
-### Simulation Settings
-
-- `world_file` (default: TIAGo door world) - Gazebo world file path
-- `robot` (default: `tiago++`) - Robot model: `tiago++` (dual-arm), `titanium`, `steel`, or `iron`
-- `gui` (default: `true`) - Show Gazebo GUI
-- `gzpose` (default: origin) - Initial robot spawn pose
-
-### Door Perception
-
-- `door_config` (default: two-sided door config) - AprilTag configuration YAML
-
-### Navigation
-
-- `approach_cfg` (default: door approach config) - Door approach parameters
-
-## Component Packages
-
-The bringup integrates these packages:
-
-- `tiago_door_sim` - Gazebo simulation environment
-- `tiago_slam` - SLAM implementations
-- `tiago_door_localization` - AprilTag-based door perception and doorway pose estimation
-- `tiago_move_base_control` - Navigation goal sender and door approach goal generator
-- `tiago_door_bt` - Behavior tree executor for door-opening pipeline
-- `tiago_door_planning` - Action server for base/arm door-opening trajectory planning
-- `tiago_arm_manipulation` - MoveIt-based arm motion and gripper control
-- `tiago_vicon` - Motion capture integration and position logging
-
-## Usage Examples
-
-### Running by the main bringup
+## Normal run
 
 ```bash
-# default selection
-roslaunch tiago_door_bringup main.launch
+roslaunch tiago_door_bringup main.launch                     # real robot (simulation:=false is the default)
+roslaunch tiago_door_bringup main.launch simulation:=true \
+  gzpose:="-x 1.05 -y -1.5 -z 0 -R 0 -P 0 -Y -1.5708"        # sim, push door in view
+# drive around until the map covers the door's surroundings, put the door's tag in the camera's view:
+rosservice call /door_mission/start
 ```
 
-### Manually teleop robot to see door detection
+The mission's states and preconditions: [tiago_door_mission](../tiago_door_mission/README.md).
 
-Teleoperation without the controller by keyboard.
+## Launch arguments (`main.launch`)
+
+| Argument | Default | Starts |
+| --- | --- | --- |
+| `simulation` | `false` | Gazebo world with the doors (`tiago_door_sim`); on the robot it kills PAL's nav nodes when SLAM runs |
+| `use_slam` | `true` | `tiago_slam` (RTAB-Map, icp odometry) |
+| `use_door_perception` | `true` | AprilTag door perception |
+| `use_navigation` | `true` | move_base with the door-masked global costmap the planner reads |
+| `use_door_planning` | `true` | `open_door`, `pass_door`, `execute_door_segment`, `plan_approach`, `measure_door` |
+| `use_mission` | `true` | door mission node, idle until `/door_mission/start` |
+| `mission_dry_run` | `false` | mission plans only (nothing moves) |
+| `use_vicon` | `false` | VICON bridge |
+| `rviz` | `false` | RViz with `rviz/tiago_door_main.rviz` |
+| `world_file`, `robot`, `gui`, `gzpose`, ... | | sim only (`gzpose`: robot spawn pose) |
+| `door_config` | two-sided door config | AprilTag configuration YAML |
+
+## Bag replay
+
+`scripts/replay.sh <recording dir> [roslaunch args]` replays a `record_bag.sh` recording through SLAM, perception,
+move_base and the door servers. It then starts the mission as a dry run after `mission_delay` s (default 30). That
+checks the door lock, the mask, the approach poses and the opening plan on real data.
+
+- The bag's `/tf` is played on `/tf_bag`. The recorded `map → odom` is filtered out, since the replayed SLAM publishes
+  its own.
+- The URDF saved next to the bags becomes `robot_description`.
 
 ```bash
-rosrun key_teleop key_teleop.py /key_vel:=/mobile_base_controller/cmd_vel
+rosrun tiago_door_bringup replay.sh ~/bags/door_planning_test_2026-11-19_15-20-11 rviz:=false
 ```
 
-### Cleanup of a old map
+## Other
 
 ```bash
-rm ~/.ros/rtabmap.db
-```
-
-## RViz Configuration
-
-A default RViz configuration is available at `rviz/tiago_door_nav.rviz`.
-
-```bash
-rviz -d $(rospack find tiago_door_bringup)/rviz/tiago_door_main.rviz
+rosrun key_teleop key_teleop.py /key_vel:=/mobile_base_controller/cmd_vel   # drive manually
+rm ~/.ros/rtabmap.db                                                         # drop an old map
 ```

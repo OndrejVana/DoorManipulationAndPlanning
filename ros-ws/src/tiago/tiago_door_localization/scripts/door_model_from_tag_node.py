@@ -5,7 +5,6 @@ import rospy
 
 from std_msgs.msg import String, Int32
 from geometry_msgs.msg import PoseStamped, Vector3Stamped
-from std_srvs.srv import SetBool, SetBoolResponse
 
 import tf.transformations as tft
 
@@ -24,27 +23,6 @@ class DoorModelFromTagNode(object):
         self.active_tag_id_topic = rospy.get_param("~active_tag_id_topic", "/door/tag_id")
         self._active_tag_id = None
 
-        # Optional forwarding for higher-level behavior
-        self.forward_side = bool(rospy.get_param("~forward_side", True))
-        self.forward_hinge_side = bool(rospy.get_param("~forward_hinge_side", True))
-        self.forward_interaction = bool(rospy.get_param("~forward_interaction", True))
-        self.side_topic_in = rospy.get_param("~side_topic_in", "/door/door_side")
-        self.hinge_side_topic_in = rospy.get_param("~hinge_side_topic_in", "/door/hinge_side")
-        self.interaction_topic_in = rospy.get_param("~interaction_topic_in", "/door/interaction")
-        self.pub_side = rospy.Publisher("/door/door_side", String, queue_size=10) if self.forward_side else None
-        self.pub_hinge_side = rospy.Publisher("/door/hinge_side", String, queue_size=10) if self.forward_hinge_side else None
-        self.pub_interaction = rospy.Publisher("/door/interaction", String, queue_size=10) if self.forward_interaction else None
-        self._last_side = ""
-        self._last_hinge_side = ""
-        self._last_interaction = ""
-
-        if self.forward_side:
-            rospy.Subscriber(self.side_topic_in, String, self._side_cb, queue_size=1)
-        if self.forward_hinge_side:
-            rospy.Subscriber(self.hinge_side_topic_in, String, self._hinge_side_cb, queue_size=1)
-        if self.forward_interaction:
-            rospy.Subscriber(self.interaction_topic_in, String, self._interaction_cb, queue_size=1)
-
         # Legacy defaults
         self.legacy_door_normal_axis_tag = self._parse_axis(rospy.get_param("~door_normal_axis_tag", "z"))
         self.legacy_hinge_axis_tag = self._parse_axis(rospy.get_param("~hinge_axis_tag", "y"))
@@ -55,6 +33,9 @@ class DoorModelFromTagNode(object):
         self.legacy_publish_hinge_orientation = bool(rospy.get_param("~publish_hinge_orientation", True))
         self.legacy_door_width_m = float(rospy.get_param("~door_width_m", 0.9))
         self.legacy_handle_radius_m = float(rospy.get_param("~handle_radius_m", 0.75))
+
+        # Doors hang vertically: drop the tag's tilt before applying the offsets
+        self.level_tag = bool(rospy.get_param("~level_tag", True))
 
         # Per-tag models
         raw_models = rospy.get_param("~models", {})
@@ -86,15 +67,6 @@ class DoorModelFromTagNode(object):
 
     def _tag_id_cb(self, msg):
         self._active_tag_id = int(msg.data)
-
-    def _side_cb(self, msg):
-        self._last_side = msg.data
-
-    def _hinge_side_cb(self, msg):
-        self._last_hinge_side = msg.data
-
-    def _interaction_cb(self, msg):
-        self._last_interaction = msg.data
 
     def _parse_model_cfg(self, cfg):
         door_normal_axis_tag = self._parse_axis(cfg.get("door_normal_axis_tag", "z"))
@@ -151,6 +123,24 @@ class DoorModelFromTagNode(object):
         return legacy, -1
 
     # Math helpers
+
+    def _levelled(self, T, normal_axis_tag):
+        """The tag frame turned upright: a door hangs vertically, and a few degrees of tag tilt, levered over the
+        1.2 m down to the hinge, would move the hinge by centimetres. The normal keeps its heading, y points down."""
+        normal = T[0:3, 0:3].dot(normal_axis_tag)
+        z = self._vec_norm([normal[0], normal[1], 0.0])
+        if z is None:
+            return None
+        if not np.allclose(normal_axis_tag, [0.0, 0.0, 1.0]):
+            rospy.logwarn_throttle(30.0, "door_model_from_tag_node: levelling assumes the tag z axis is the door normal")
+            return T
+        y = np.array([0.0, 0.0, -1.0])
+        levelled = np.eye(4)
+        levelled[0:3, 0] = np.cross(y, z)
+        levelled[0:3, 1] = y
+        levelled[0:3, 2] = z
+        levelled[0:3, 3] = T[0:3, 3]
+        return levelled
 
     def _vec_norm(self, v, eps=1e-12):
         v = np.asarray(v, dtype=np.float64).reshape(3)
@@ -245,6 +235,11 @@ class DoorModelFromTagNode(object):
         model, used_tid = self._get_active_model()
 
         T_map_tag = self._T_from_pose(msg.pose)
+        if self.level_tag:
+            T_map_tag = self._levelled(T_map_tag, model["door_normal_axis_tag"])
+            if T_map_tag is None:
+                self.pub_dbg.publish(String(data="door_normal_vertical"))
+                return
 
         # Apply model transforms
         T_map_handle = np.dot(T_map_tag, model["T_tag_handle"])
@@ -316,17 +311,9 @@ class DoorModelFromTagNode(object):
 
         self.pub_hinge.publish(hinge_msg)
 
-        if self.pub_side is not None:
-            self.pub_side.publish(String(data=self._last_side))
-        if self.pub_hinge_side is not None:
-            self.pub_hinge_side.publish(String(data=self._last_hinge_side))
-        if self.pub_interaction is not None:
-            self.pub_interaction.publish(String(data=self._last_interaction))
-
         self.pub_dbg.publish(String(
-            data="ok tid=%d handle+hinge+plane (door_width_m=%.3f handle_radius_m=%.3f) side=%s hinge_side=%s interaction=%s" %
-                 (used_tid, float(model.get("door_width_m", 0.0)), float(model.get("handle_radius_m", 0.0)),
-                  self._last_side, self._last_hinge_side, self._last_interaction)
+            data="ok tid=%d handle+hinge+plane (door_width_m=%.3f handle_radius_m=%.3f)" %
+                 (used_tid, float(model.get("door_width_m", 0.0)), float(model.get("handle_radius_m", 0.0)))
         ))
 
 

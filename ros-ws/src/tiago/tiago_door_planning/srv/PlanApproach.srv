@@ -1,0 +1,9 @@
+# Base poses from which an arm grasps the closed door's handle, nearest the robot first.
+geometry_msgs/PoseStamped hinge_pose
+geometry_msgs/PoseStamped handle_pose
+string hinge_side
+bool push
+---
+bool success
+string message
+geometry_msgs/PoseStamped[] poses

@@ -85,14 +85,28 @@ def _nearest_free_cell(free, cell):
 
 def connected_free_space(problem, walls, door, handle_xy, params):
     """Base positions that are collision free and connected to the start position."""
+    return free_space_around(
+        problem,
+        walls,
+        door,
+        [handle_xy],
+        params.reach_max + params.cell_size,
+        params.cell_size,
+    )
+
+
+def free_space_around(problem, walls, door, points_xy, margin, cell_size):
+    """Base positions within margin of the start and of points_xy that are collision free and connected to the
+    start position."""
     start_xy = problem.start_pose[:2]
-    margin = params.reach_max + params.cell_size
-    origin = np.minimum(handle_xy, start_xy) - margin
-    xs = np.arange(origin[0], max(handle_xy[0], start_xy[0]) + margin, params.cell_size)
-    ys = np.arange(origin[1], max(handle_xy[1], start_xy[1]) + margin, params.cell_size)
+    points = np.vstack([start_xy] + [np.asarray(xy)[:2] for xy in points_xy])
+    origin = points.min(axis=0) - margin
+    end = points.max(axis=0) + margin
+    xs = np.arange(origin[0], end[0], cell_size)
+    ys = np.arange(origin[1], end[1], cell_size)
     free = _bases_clear(problem, walls, door, xs, ys)
     labels, _ = label(free)
-    free_space = FreeSpace(None, origin, params.cell_size)
+    free_space = FreeSpace(None, origin, cell_size)
     start_label = labels[_nearest_free_cell(free, _cell_index(free_space, start_xy))]
     return free_space._replace(connected=(labels == start_label) & free)
 
@@ -229,12 +243,14 @@ def _regrasp_at(problem, walls, door, pose, angle, next_angle):
     return spot
 
 
-def grasp_spots(problem, angle, next_angle, params):
+def grasp_spots(problem, angle, next_angle, params, nearest_robot_first=True):
     """GraspSpots on the candidate grid from which some grip grasps the handle at angle and can move it on to
-    next_angle, at most MAX_GRASP_SPOTS of them, nearest the robot first."""
+    next_angle, at most MAX_GRASP_SPOTS of them, nearest the robot first, or else nearest the middle of the reach
+    ring first."""
     walls, door = wall_boxes(problem.scene), door_box(problem.scene, angle)
     candidates = _connected_candidates(problem, walls, door, angle, params)
-    candidates.sort(key=lambda pose: np.linalg.norm(pose[:2] - problem.start_pose[:2]))
+    if nearest_robot_first:
+        candidates.sort(key=lambda pose: np.linalg.norm(pose[:2] - problem.start_pose[:2]))
     return _first_found(
         lambda pose: _regrasp_at(problem, walls, door, pose, angle, next_angle),
         candidates,
@@ -277,9 +293,14 @@ def drive_map(problem, angle, spots, params):
     walls, door = wall_boxes(problem.scene), door_box(problem.scene, angle)
     handle_xy = handle_pose(problem.scene, angle)[:2, 3]
     free_space = connected_free_space(problem, walls, door, handle_xy, params)
-    sources = [_cell_index(free_space, spot.pose[:2]) for spot in spots]
-    distance = _distances_from(free_space.connected, sources, params.cell_size)
-    return DriveMap(distance, free_space.origin, params.cell_size)
+    return drive_map_in(free_space, [spot.pose[:2] for spot in spots])
+
+
+def drive_map_in(free_space, targets_xy):
+    """Driving distance from each connected free cell of free_space to the nearest of targets_xy."""
+    sources = [_cell_index(free_space, xy) for xy in targets_xy]
+    distance = _distances_from(free_space.connected, sources, free_space.cell_size)
+    return DriveMap(distance, free_space.origin, free_space.cell_size)
 
 
 def drive_distance(drive, xy):

@@ -1,82 +1,59 @@
 # tiago_move_base_control
 
-ROS 1 (Melodic) package that wraps `move_base` navigation for TIAGo and provides a door-approach goal generator. It exposes a simple topic-based interface so other nodes (e.g. the behavior tree) can send navigation goals without directly calling the `move_base` action API.
+ROS 1 (Melodic) package with the `move_base` setup for TIAGo and the `DoorMaskLayer` costmap plugin.
+
+- The door mission (`tiago_door_mission`) sends move_base goals through the action API itself.
+- `tiago_door_planning` plans on this package's global costmap.
 
 ## Package structure
 
 ```text
 tiago_move_base_control/
-├── config/
-│   └── door_approach.yaml              # Door approach generator parameters
 ├── launch/
-│   ├── tiago_move_base.launch          # Full move_base stack with costmaps
-│   ├── move_base_control.launch        # Goal sender node only
-│   └── door_nav.launch                 # Door approach generator node
-├── scripts/
-│   ├── move_base_goal_sender.py        # Forwards PoseStamped goals to move_base action
-│   └── door_approach_goal_generator_node.py  # Computes pregrasp goal from door pose
-├── src/                                # C++ costmap plugin
-├── include/                            # C++ plugin headers
-└── plugin.xml                          # Costmap layer plugin registration
+│   └── tiago_move_base.launch   # move_base (ns /tiago_move_base) with both costmaps
+├── src/DoorMaskLayer.cpp        # costmap plugin
+├── include/                     # plugin header
+└── plugin.xml                   # plugin registration
 ```
 
-## Dependencies
+## move_base
 
-`rospy`, `roscpp`, `geometry_msgs`, `std_msgs`, `actionlib`, `actionlib_msgs`, `move_base_msgs`, `costmap_2d`, `pluginlib`, `tf2`
+`roslaunch tiago_move_base_control tiago_move_base.launch` (started by `main.launch use_navigation:=true`).
 
-## Launch
+- **Namespace:** `/tiago_move_base/move_base`.
+- **Planners:** NavfnROS (global) and TrajectoryPlannerROS (local).
+- **Remaps:** `cmd_vel` goes to `/mobile_base_controller/cmd_vel`. `execute_door_segment` publishes to the same
+  topic, so move_base must be idle during the opening; the mission ensures this.
+- **Base:** `robot_radius` 0.30, the same as `collision/base_radius` in `tiago_door_planning`.
+- **Global costmap:** frame `map`, not rolling. Layers in order:
+  1. `static_layer`: rtabmap's live `/map`.
+  2. `obstacle_layer`: `/scan`, so obstacles not yet in the map count.
+  3. `door_mask`.
+  4. `inflation_layer`.
 
-```bash
-# Full move_base stack (planners + costmaps + goal sender)
-roslaunch tiago_move_base_control tiago_move_base.launch
+  `open_door` reads this costmap (`/tiago_move_base/move_base/global_costmap/costmap`) afresh for every plan.
+- **Local costmap:** frame `odom`, rolling 4×4 m. Layers: obstacle (`/scan`) and inflation. It has no
+  door mask: near the robot, the leaf is a real obstacle.
 
-# Door approach goal generator only
-roslaunch tiago_move_base_control door_nav.launch
-```
+Only the base laser feeds the obstacle layers. The former `/depth_scan` (`depthimage_to_laserscan` in `tiago_slam`)
+was stamped in `base_footprint` although its ranges are measured from the head camera, which put everything it saw
+about 20 cm too close; with the head turned to the door its scan plane is not horizontal either. Obstacles above the
+laser plane (table tops) are in no layer now: the icp SLAM grid is built from the laser too. A point cloud obstacle
+layer would add them.
 
-## Nodes
+## DoorMaskLayer
 
-### `move_base_goal_sender`
+Clears the cells inside a polygon while enabled. The mission publishes the door leaf's swing sector, from closed to
+`mask/max_angle_deg` and grown by `mask/margin`. The planner models the leaf itself, so the leaf the SLAM map and the
+sensors see must not block it twice. Without the mask, a closed leaf in the map blocks push-door base paths, and the
+leaf positions rtabmap adds while the door opens block later attempts.
 
-Listens for a `PoseStamped` goal on a topic and forwards it to the `move_base` action server. Also relays `move_base` status for monitoring.
-
-| Topic | Type | Description |
+| Parameter (`~<costmap>/door_mask/`) | Default | Meaning |
 | --- | --- | --- |
-| `/tiago_move_base_control/goal` (sub) | `geometry_msgs/PoseStamped` | Incoming navigation goal |
-| `/tiago_move_base_control/cancel` (sub) | `std_msgs/Empty` | Cancel all active goals |
-| `~status` (pub) | `actionlib_msgs/GoalStatusArray` | Forwarded move_base status |
+| `polygon_topic` | `/door_mask/polygon` | `geometry_msgs/PolygonStamped`, any frame TF can map into the costmap's |
+| `enabled_topic` | `/door_mask/enabled` | `std_msgs/Bool` |
+| `set_unknown_instead_of_free` | `false` | Write NO_INFORMATION instead of FREE_SPACE |
 
-### `door_approach_goal_generator_node`
-
-Computes a pregrasp navigation goal in front of the detected door using the door plane normal and (optionally) the handle pose. Publishes the goal when triggered.
-
-| Topic | Type | Description |
-| --- | --- | --- |
-| `/door/plane_map` (sub) | `geometry_msgs/PoseStamped` | Door plane normal in map frame |
-| `/door/handle_pose_map` (sub) | `geometry_msgs/PoseStamped` | Door handle pose |
-| `/tiago_move_base_control/generate_goal` (sub) | `std_msgs/Empty` | Trigger goal computation |
-| `/tiago_move_base_control/goal` (pub) | `geometry_msgs/PoseStamped` | Computed navigation goal |
-
-## Parameters (`config/door_approach.yaml`)
-
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `plane_topic` | `/door/plane_map` | Door plane topic |
-| `handle_topic` | `/door/handle_pose_map` | Handle pose topic |
-| `goal_topic` | `/tiago_move_base_control/goal` | Navigation goal output topic |
-| `trigger_topic` | `/tiago_move_base_control/generate_goal` | Goal trigger topic |
-| `stand_off_m` | `0.75` | Standoff distance from door (m) |
-| `lateral_offset_m` | `0.0` | Lateral offset from door centre (m) |
-| `use_handle_as_target` | `true` | Use handle position as goal target (vs door centre) |
-| `face_door` | `true` | Orient robot to face the door at goal |
-| `normal_sign` | `-1` | Sign of door normal for goal direction |
-| `continuous` | `false` | Continuously publish goals when new poses arrive |
-| `min_update_period_s` | `0.5` | Minimum time between continuous goal publications (s) |
-
-## `move_base` configuration (set in `tiago_move_base.launch`)
-
-- **Namespace:** `/tiago_move_base/move_base`
-- **Global planner:** `navfn/NavfnROS`
-- **Local planner:** `base_local_planner/TrajectoryPlannerROS`
-- **Velocity command topic:** remapped to `/mobile_base_controller/cmd_vel`
-- **Max linear velocity:** `0.5 m/s` | **Max angular velocity:** `1.0 rad/s`
+- The polygon is transformed into the costmap's frame on every update.
+- Clearing costmaps (`reset`) keeps the polygon.
+- Disabling the mask or moving the polygon repaints the previously masked area from the layers below.

@@ -1,0 +1,14 @@
+<launch>
+  <arg name="config" default="$(find tiago_door_mission)/config/mission.yaml"/>
+  <arg name="dry_run" default="false"/>
+  <arg name="door_motion_overrides" default="" doc="Loaded over door_motion.yaml (door dimensions for the mask)"/>
+
+  <!-- Idle until: rosservice call /door_mission/start; stop with /door_mission/stop. -->
+  <node pkg="tiago_door_mission" type="door_mission_node.py" name="door_mission" output="screen">
+    <rosparam command="load" file="$(arg config)"/>
+    <rosparam command="load" file="$(find tiago_door_planning)/config/door_motion.yaml" ns="door_motion"/>
+    <rosparam command="load" file="$(arg door_motion_overrides)" ns="door_motion"
+              if="$(eval arg('door_motion_overrides') != '')"/>
+    <param name="dry_run" value="$(arg dry_run)"/>
+  </node>
+</launch>

@@ -1351,18 +1351,12 @@ Visualization Manager:
       Unreliable: false
       Value: true
     - Alpha: 1
-      Axes Length: 1
-      Axes Radius: 0.05000000074505806
-      Class: rviz/Pose
+      Class: rviz/Polygon
       Color: 255; 25; 0
       Enabled: true
-      Head Length: 0.30000001192092896
-      Head Radius: 0.10000000149011612
-      Name: Doorway
-      Shaft Length: 1
-      Shaft Radius: 0.05000000074505806
-      Shape: Axes
-      Topic: /door/doorway_pose_map
+      Name: Door mask
+      Queue Size: 10
+      Topic: /door_mask/polygon
       Unreliable: false
       Value: true
     - Alpha: 1

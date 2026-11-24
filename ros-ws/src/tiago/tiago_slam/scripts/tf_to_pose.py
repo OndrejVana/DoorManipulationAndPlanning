@@ -2,7 +2,7 @@
 
 import rospy
 import tf2_ros
-from geometry_msgs.msg import PoseStamped, TransformStamped
+from geometry_msgs.msg import PoseStamped
 
 class TFToPosePublisher:
     def __init__(self):

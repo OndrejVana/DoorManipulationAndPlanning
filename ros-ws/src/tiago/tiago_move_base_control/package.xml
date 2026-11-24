@@ -2,29 +2,25 @@
 <package format="2">
   <name>tiago_move_base_control</name>
   <version>0.0.1</version>
-  <description>Simple move_base goal sender for TIAGo (ROS1 Melodic)</description>
+  <description>move_base for TIAGo with the DoorMaskLayer costmap plugin (ROS1 Melodic)</description>
 
   <maintainer email="you@todo.todo">you</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>catkin</buildtool_depend>
 
-  <depend>rospy</depend>
+  <depend>costmap_2d</depend>
   <depend>geometry_msgs</depend>
+  <depend>pluginlib</depend>
+  <depend>roscpp</depend>
   <depend>std_msgs</depend>
-  <depend>actionlib</depend>
-  <depend>actionlib_msgs</depend>
-  <depend>move_base_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>tf2_ros</depend>
 
-  <build_depend>costmap_2d</build_depend>
-  <build_depend>pluginlib</build_depend>
-  <build_depend>roscpp</build_depend>
-  <build_depend>tf2</build_depend>
-
-  <exec_depend>costmap_2d</exec_depend>
-  <exec_depend>pluginlib</exec_depend>
-  <exec_depend>roscpp</exec_depend>
-  <exec_depend>tf2</exec_depend>
+  <exec_depend>move_base</exec_depend>
+  <exec_depend>navfn</exec_depend>
+  <exec_depend>base_local_planner</exec_depend>
 
   <export>
     <costmap_2d plugin="${prefix}/plugin.xml" />

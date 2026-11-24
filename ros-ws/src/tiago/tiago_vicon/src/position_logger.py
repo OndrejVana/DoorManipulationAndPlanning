@@ -204,7 +204,7 @@ class PositionLogger:
 
 def main():
     try:
-        logger = PositionLogger()
+        PositionLogger()
         rospy.spin()
     except rospy.ROSInterruptException:
         pass

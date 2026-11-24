@@ -6,7 +6,7 @@ import actionlib
 import tf
 import math
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
-from geometry_msgs.msg import PoseStamped, Quaternion
+from geometry_msgs.msg import PoseStamped
 from std_srvs.srv import Trigger, TriggerResponse
 from actionlib_msgs.msg import GoalStatus
 from std_srvs.srv import Empty

@@ -4,7 +4,6 @@
 #   
 # Writes bags/<label>_<timestamp>/ with the bag (split every 2 GB) and next to it the parameter server dump, the
 # URDF, the topic/node lists and which of the recorded topics were not being published.
-#
 
 set -u
 
@@ -87,7 +86,9 @@ fi
 TOPICS+=("${CAMERA[@]/#/$camera_prefix}")
 rosnode list > "$OUT_DIR/nodes.txt" 2>&1
 rosparam dump "$OUT_DIR/params.yaml"
-rosparam get /robot_description > "$OUT_DIR/robot_description.urdf" 2>&1
+# rosparam get prints the URDF as a quoted YAML string; the file holds the XML itself
+rosparam get /robot_description 2>&1 | python3 -c 'import sys, yaml; sys.stdout.write(yaml.safe_load(sys.stdin.read()))' \
+  > "$OUT_DIR/robot_description.urdf"
 {
   echo "label: $LABEL"
   echo "start: $(date --iso-8601=seconds)"

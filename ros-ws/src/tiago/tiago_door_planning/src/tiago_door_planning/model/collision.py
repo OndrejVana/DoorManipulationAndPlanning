@@ -24,6 +24,18 @@ def distance_grid(occupancy, resolution, origin, occupied_threshold):
     )
 
 
+def clear_under_robot(occupancy, resolution, origin, base_xy, radius):
+    """Clear occupancy under the robot's base, and return the number of cleared cells. The base is a circle of radius"""
+    occupancy = np.array(occupancy, dtype=float)
+    rows, columns = np.indices(occupancy.shape)
+    x = origin[0] + (columns + 0.5) * resolution
+    y = origin[1] + (rows + 0.5) * resolution
+    under = np.hypot(x - base_xy[0], y - base_xy[1]) <= radius
+    cleared = int(np.count_nonzero(under & (occupancy > 0)))
+    occupancy[under] = 0.0
+    return occupancy, cleared
+
+
 def grid_distance_at(grid, xy):
     column, row = ((np.asarray(xy) - grid.origin) / grid.resolution).astype(int)
     height, width = grid.distance.shape

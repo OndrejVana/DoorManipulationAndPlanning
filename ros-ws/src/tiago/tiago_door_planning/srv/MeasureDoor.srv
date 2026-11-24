@@ -1,0 +1,11 @@
+# The door angle the laser sees now.
+geometry_msgs/PoseStamped hinge_pose
+geometry_msgs/PoseStamped handle_pose
+string hinge_side
+bool push
+---
+
+bool seen # seen: the leaf was fitted
+float64 angle # angle (rad)
+float64 at_least # free-space lower bound on the angle (rad).
+string message

@@ -1,0 +1,10 @@
+# Door parameters for the door in the simulation.
+door:
+  width: 0.90
+  wall_thickness: 0.15
+
+grasp:
+  hand_closed: [2.0, 2.0, 0.8]
+  push:
+    door_offset:
+      right: [-0.03, 0.01, -0.02]

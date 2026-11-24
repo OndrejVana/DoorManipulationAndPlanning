@@ -131,7 +131,6 @@ add_definitions(${PCL_DEFINITIONS})
 # Install Python scripts
 catkin_install_python(
   PROGRAMS
-    scripts/laser_processor.py
     scripts/tf_filter.py
     scripts/imu_fix.py
     scripts/slam_bridge.py

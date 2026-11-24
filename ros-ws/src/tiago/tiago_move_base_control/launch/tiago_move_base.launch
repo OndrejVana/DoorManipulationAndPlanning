@@ -28,11 +28,11 @@
         acc_lim_y: 2.5
         holonomic_robot: false
         yaw_goal_tolerance: 0.05
-        xy_goal_tolerance: 0.1
+        xy_goal_tolerance: 0.05
         latch_xy_goal_tolerance: false
       </rosparam>
 
-      <!-- GLOBAL COSTMAP (STATIC)   -->
+      <!-- Obstacles from the base laser only -->
       <rosparam param="global_costmap">
         global_frame: map
         robot_base_frame: base_footprint
@@ -40,37 +40,36 @@
         publish_frequency: 1.0
         transform_tolerance: 5.0
 
-        # Use the saved /map (door likely closed in map)
+        # The live rtabmap grid (/map), plus what the laser sees now. open_door plans on this costmap.
         static_map: true
         rolling_window: false
-
         resolution: 0.05
 
         plugins:
           - {name: static_layer, type: "costmap_2d::StaticLayer"}
-          - {name: door_mask,  type: "tiago_move_base_control/DoorMaskLayer"}
+          - {name: obstacle_layer, type: "costmap_2d::ObstacleLayer"}
+          - {name: door_mask, type: "tiago_move_base_control/DoorMaskLayer"}
           - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
 
         static_layer:
           map_topic: /map
           subscribe_to_updates: true
 
-        # Door masking layer (toggle via /door_mask/enabled)
+        obstacle_layer:
+          observation_sources: scan
+          scan: {topic: /scan, data_type: LaserScan, marking: true, clearing: true, obstacle_range: 4.0, raytrace_range: 5.0}
+
+        # The door's swing sector, published by the door mission (the planner models the leaf itself).
         door_mask:
-          enabled: false
-          enabled_topic: "/door_mask/enabled"
-          door_pose_topic: "/door/doorway_pose_map"  # PoseStamped in map frame
-          width_m: 0.9
-          thickness_m: 1.2
-          margin_m: 0.3
-          set_unknown_instead_of_free: false
+          polygon_topic: /door_mask/polygon
+          enabled_topic: /door_mask/enabled
 
         inflation_layer:
           inflation_radius: 0.1
           cost_scaling_factor: 10.0
       </rosparam>
 
-      <!-- LOCAL COSTMAP (ROLLING)  -->
+      <!-- Only live sensors: the leaf is a real obstacle near the robot. -->
       <rosparam param="local_costmap">
         global_frame: odom
         robot_base_frame: base_footprint
@@ -86,36 +85,19 @@
 
         plugins:
           - {name: obstacle_layer, type: "costmap_2d::ObstacleLayer"}
-          - {name: door_mask,  type: "tiago_move_base_control/DoorMaskLayer"}
           - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
 
         obstacle_layer:
-          observation_sources: depth_scan
-          depth_scan:
-            topic: /depth_scan
-            data_type: LaserScan
-            marking: true
-            clearing: true
-            obstacle_range: 8.0
-            raytrace_range: 8.0
-
-        # Also mask locally to ignore the swinging door near the robot
-        door_mask:
-          enabled: false
-          enabled_topic: "/door_mask/enabled"
-          door_pose_topic: "/door/doorway_pose_map"  # PoseStamped in map frame
-          width_m: 0.9
-          thickness_m: 1.2
-          margin_m: 0.3
-          set_unknown_instead_of_free: false
+          observation_sources: scan
+          scan: {topic: /scan, data_type: LaserScan, marking: true, clearing: true, obstacle_range: 4.0, raytrace_range: 5.0}
 
         inflation_layer:
           inflation_radius: 0.1
           cost_scaling_factor: 10.0
       </rosparam>
 
-      <!-- Robot footprint -->
-      <param name="footprint" value="[[-0.2, -0.2], [-0.2, 0.2], [0.2, 0.2], [0.2, -0.2]]"/>
+      <!-- Same base radius as tiago_door_planning (collision/base_radius). -->
+      <param name="robot_radius" value="0.30"/>
 
     </node>
   </group>

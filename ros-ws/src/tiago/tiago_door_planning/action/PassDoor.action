@@ -1,0 +1,11 @@
+geometry_msgs/PoseStamped hinge_pose
+geometry_msgs/PoseStamped handle_pose
+string hinge_side
+bool push
+# Door angle the opening left the leaf at (rad); the laser refines it.
+float64 door_angle
+---
+bool success
+string message
+---
+string stage

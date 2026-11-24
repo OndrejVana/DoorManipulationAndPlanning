@@ -8,6 +8,8 @@ find_package(catkin REQUIRED COMPONENTS
   costmap_2d
   pluginlib
   tf2
+  tf2_geometry_msgs
+  tf2_ros
   geometry_msgs
   std_msgs
 )
@@ -15,7 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES door_mask_layer
-  CATKIN_DEPENDS roscpp costmap_2d pluginlib tf2 geometry_msgs std_msgs
+  CATKIN_DEPENDS roscpp costmap_2d pluginlib tf2 tf2_geometry_msgs tf2_ros geometry_msgs std_msgs
 )
 
 include_directories(
@@ -39,9 +41,6 @@ install(DIRECTORY include/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
 )
 
-# Existing Python nodes
-catkin_install_python(PROGRAMS
-  scripts/move_base_goal_sender.py
-  scripts/door_approach_goal_generator_node.py
-  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+install(DIRECTORY launch
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )

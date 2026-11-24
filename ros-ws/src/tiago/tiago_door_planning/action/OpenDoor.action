@@ -2,6 +2,10 @@ geometry_msgs/PoseStamped hinge_pose
 geometry_msgs/PoseStamped handle_pose
 string hinge_side
 bool push
+# Plan only: nothing moves; the result tells whether a plan exists.
+bool plan_only
+# Let go of the handle and park the arm when the door is open, so the robot ends released.
+bool release_at_end
 ---
 bool success
 float64 final_door_angle

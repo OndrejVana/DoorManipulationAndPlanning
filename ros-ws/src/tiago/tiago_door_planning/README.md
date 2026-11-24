@@ -11,16 +11,19 @@ the plan closed-loop with base and arm together.
 ```bash
 roslaunch tiago_door_planning door_opening.launch
 rviz -d $(rospack find tiago_door_planning)/rviz/door_opening.rviz   # separate terminal
-rosrun tiago_door_planning run_open_door.py _push:=false
+rosrun tiago_door_planning run_open_door.py           # _plan_only:=true, _release_at_end:=true
 ```
 
-- `run_open_door.py` reads `/door/hinge_pose_map`, `/door/handle_pose_map`, `/door/hinge_side` (`tiago_door_localization`).
-- `main.launch use_door_planning:=true` starts the same servers.
+- `run_open_door.py` reads `/door/hinge_pose_map`, `/door/handle_pose_map`, `/door/hinge_side`, `/door/interaction`
+  (`tiago_door_localization`): the handle must be in reach and the tag in view.
+- The normal way in is the door mission (`tiago_door_mission`), which approaches the door first and passes it after.
+- `main.launch` starts the same servers (`use_door_planning`, default true).
 - RViz: green path = holding the handle, blue = driving released, orange leaf = believed door angle.
 
 ## How an opening runs
 
-1. **Plan:** A* per arm over base pose, door angle, grasp state and grip (arm + front/back handle). Checks IK, joint
+1. **Plan:** from the current base pose. When no arm reaches the handle from there, the plan starts released and
+   drives onto a grasp spot first. A* per arm over base pose, door angle, grasp state and grip (arm + front/back handle). Checks IK, joint
    limits and collisions on every edge; plans regrasps (with either arm) when one grasp can't open the door far enough.
 2. **Choose:** the plan with the fewest grasps, then the shortest.
 3. **Grasp:** zero the wrist wrench, approach the handle and stop on contact, close the hand. The laser confirms the
@@ -32,12 +35,27 @@ rosrun tiago_door_planning run_open_door.py _push:=false
 
 - Goal angle: the passable angle (from `goal/pass_width`) + `planner/passable_margin_deg`. If unreachable, the
   opening settles at the grid angle below, never under the passable angle.
-- Ends holding the handle at the goal angle; passing through is left to the caller.
+- Ends holding the handle at the goal angle, or with `release_at_end` released and the arm parked (also tried after a
+  failure). `pass_door` then drives through.
+- Every plan reads the costmap afresh (`costmap/topic`, must be in the door poses' frame). Only lethal cells count,
+  checked against the base; the door leaf is modelled, so its swing sector should be masked out of the costmap
+  (`DoorMaskLayer`).
 
 ## Action servers
 
-- `open_door` (`OpenDoor`): hinge pose, handle pose, hinge side, push → success, final door angle, message.
-- `execute_door_segment` (`ExecuteDoorSegment`): one grasped or base-only segment, tracked closed-loop.
+All in one node (`door_opening_server.py`), one request at a time (a second one is refused as busy):
+
+- `open_door` (`OpenDoor`): hinge pose, handle pose, hinge side, push, `plan_only`, `release_at_end` -> success, final
+  door angle, message. A preempt cancels the running segment.
+- `pass_door` (`PassDoor`): door + the angle the opening left it at -> plans a released base path through the gap to
+  the first reachable of `pass/distances` past the doorway and tracks it.
+- `plan_approach` (`PlanApproach.srv`): door -> base poses to start the opening from: grasp spots for the closed door
+  (nearest the middle of the reach ring first), each kept only when a whole opening plans from it, up to
+  `goal/approach_plans`, fewest grasps then shortest first. Costs one opening plan per pose.
+- `measure_door` (`MeasureDoor.srv`): door -> laser fit of the leaf angle (`seen`, `angle`) and free-space bound.
+
+`execute_door_segment` (`ExecuteDoorSegment`, `door_tracking_server.py`): one grasped or base-only segment, tracked
+closed-loop.
 
 ## Parameters (`config/door_motion.yaml`)
 
@@ -49,7 +67,8 @@ rosrun tiago_door_planning run_open_door.py _push:=false
 - `goal`: passable width, reach band, regrasp searches, recoveries.
 - `scan`: laser door-angle fit.
 - `force`: wrench topic, zeroing, filter, contact stop, tracking compliance, force lost-grasp test (off by default).
-- `costmap`: optional occupancy grid.
+- `pass`: distances past the doorway `pass_door` drives to.
+- `costmap`: topic (read per plan), wait timeout, occupied threshold.
 
 ## Package structure
 
@@ -57,7 +76,11 @@ rosrun tiago_door_planning run_open_door.py _push:=false
 tiago_door_planning/
 ├── action/
 │   ├── OpenDoor.action            # Full opening: door poses in, success + final door angle out
+│   ├── PassDoor.action            # Drive through the opened doorway
 │   └── ExecuteDoorSegment.action  # One segment: trajectory in, tracked closed-loop (grasped or base only)
+├── srv/
+│   ├── PlanApproach.srv           # Base poses to grasp the closed door from
+│   └── MeasureDoor.srv            # Laser door angle
 ├── config/
 │   └── door_motion.yaml           # All parameters
 ├── launch/
@@ -66,14 +89,14 @@ tiago_door_planning/
 ├── rviz/
 │   └── door_opening.rviz          # Door plan markers, laser, door poses
 ├── scripts/
-│   ├── door_opening_server.py     # open_door action server
+│   ├── door_opening_server.py     # open_door, pass_door, plan_approach, measure_door
 │   ├── door_tracking_server.py    # execute_door_segment action server (50 Hz tracking)
 │   ├── run_open_door.py           # Sends the perceived door to open_door and logs the result
 │   └── door_plan_viz.py           # RViz markers: walls, leaf, planned paths, stage
 ├── src/tiago_door_planning/
 │   ├── model/
 │   │   ├── geometry.py            # SE(2)/SE(3) helpers, box distances
-│   │   ├── door_scene.py          # Door model: hinge, leaf, walls, handle pose per angle
+│   │   ├── door_scene.py          # Door model: hinge, leaf, walls, handle pose per angle, swing polygon
 │   │   ├── kinematics.py          # Pinocchio arm model: FK, Jacobian, DLS IK, link spheres, joint limits
 │   │   └── collision.py           # Base + arm spheres vs door scene and costmap, arm vs arm
 │   ├── planning/
@@ -84,6 +107,8 @@ tiago_door_planning/
 │   │   ├── door_goal.py           # Passable door angle and goal range
 │   │   ├── grasp_spots.py         # Reachable grasp poses and spots after a release
 │   │   ├── opening_plan.py        # Plan to the goal angle, regrasps, extension
+│   │   ├── pass_plan.py           # Released drive through the opened doorway
+│   │   ├── approach.py            # Where to stand to start opening the closed door
 │   │   └── plan_output.py         # Planner steps -> resampled segments
 │   ├── motion/
 │   │   ├── trajectory.py          # DoorTrajectory, reference sampling, split by sweep

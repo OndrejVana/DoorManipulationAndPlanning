@@ -42,7 +42,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Python 3.6 (bionic's python3) runtime for the project nodes. ROS Melodic itself stays on Python 2.7.
-# py_trees 0.6.9 (apt) is pure Python and py3-compatible, so python3 imports it from the melodic path.
+# smach (apt) is pure Python and py3-compatible.
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         python3-dev \
@@ -61,7 +61,7 @@ RUN apt-get update \
         python3-sip-dev \
         python3-pydot \
         libboost-python-dev \
-        ros-melodic-py-trees \
+        ros-melodic-smach \
     && rm -rf /var/lib/apt/lists/*
 
 # Compile parallelism: packages in parallel x make jobs per package. Defaults keep peak RAM ~8 GB;
@@ -146,7 +146,7 @@ RUN printf '%s\n' \
         'else' \
         '  source /py3_ws/devel/setup.bash' \
         'fi' \
-        '# py3 setup only exports lib/python3; the pure-Python Melodic libs (rospy, msgs, py_trees) live in' \
+        '# py3 setup only exports lib/python3; the pure-Python Melodic libs (rospy, msgs, smach) live in' \
         '# python2.7 paths and work on py3, so append them after the rebuilt py3 modules.' \
         'export PYTHONPATH="$PYTHONPATH:/tiago_public_ws/devel/lib/python2.7/dist-packages:/opt/ros/melodic/lib/python2.7/dist-packages"' \
         > /etc/profile.d/10-tiago-ros.sh \

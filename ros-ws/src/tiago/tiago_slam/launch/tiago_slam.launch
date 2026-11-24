@@ -7,7 +7,6 @@
   <arg name="rgb_camera_info_topic"   default="/xtion/rgb/camera_info"/>
 
   <arg name="scan_topic"  default="/scan" doc="2D scan rtabmap refines links with (ICP): base laser"/>
-  <arg name="depth_scan_topic" default="/depth_scan" doc="Scan made from the head depth image"/>
   <arg name="base_frame"  default="base_footprint"/>
   <arg name="odom_frame"  default="odom"/>
   <arg name="map_frame"   default="map"/>
@@ -75,19 +74,6 @@
   </group>
 
   <node name="kill_head_nodes" pkg="tiago_slam" type="kill_head_nodes.py" output="screen"/>
-
-  <node name="depthimage_to_laserscan"
-        pkg="depthimage_to_laserscan"
-        type="depthimage_to_laserscan"
-        output="screen">
-    <remap from="image"       to="$(arg depth)"/>
-    <remap from="camera_info" to="$(arg depth_info)"/>
-    <remap from="scan"        to="$(arg depth_scan_topic)"/>
-    <param name="output_frame_id" value="$(arg base_frame)"/>
-    <param name="scan_height"     value="10"/>
-    <param name="range_min"       value="0.45"/>
-    <param name="range_max"       value="1.90"/>
-  </node>
 
   <node unless="$(arg icp)" name="rgbd_odometry" pkg="rtabmap_ros" type="rgbd_odometry" output="screen">
     <param name="frame_id"      value="$(arg base_frame)"/>

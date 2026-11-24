@@ -152,6 +152,7 @@ goal:
   regrasp_searches: 4
   spot_regrasps_first: true
   recoveries: 2
+  approach_plans: 2  # plan_approach: spots with a whole opening planned from them (one plan each), best first
   regrasps_without_progress: 2
   min_progress_deg: 1.0
   replan_base_error: 0.05
@@ -182,7 +183,13 @@ force:
   max_offset: 0.04
   offset_leak_s: 5.0
 
+# Driving through after the opening: the first of these distances (m) past the doorway the robot can reach.
+pass:
+  distances: [1.0, 0.75, 0.5]
+
+# Read afresh for every plan; it must be in the frame of the door poses.
 costmap:
+  topic: "/tiago_move_base/move_base/global_costmap/costmap"
   timeout_s: 2.0
   occupied_threshold: 100
 

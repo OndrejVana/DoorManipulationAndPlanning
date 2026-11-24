@@ -121,8 +121,7 @@ class DoorTagPoseNode(object):
     def _average_pose(self, samples):
         """Compute average of pose samples (position and orientation)"""
         from geometry_msgs.msg import Pose
-        import numpy as np
-        
+
         if not samples:
             return None
         
@@ -242,18 +241,21 @@ class DoorTagPoseNode(object):
         if not p.header.frame_id:
             p.header.frame_id = self.camera_frame_fallback
         
+        # The pose goes to map at the image's time: the camera moves on while the detector runs.
         age = (time_now - p.header.stamp).to_sec() if p.header.stamp != rospy.Time() else 0.0
-        p.header.stamp = time_now
-        
+
         p.pose = chosen.pose.pose.pose
         if age > self.max_age_s:
             self.pub_dbg.publish(String(data="stale age=%.3fs" % age))
             return
 
         if tid != self._active_tag_id:
+            # Another tag sits on another face or door: its poses must not mix into the average.
             self._active_tag_id = tid
             self._active_side = self.side_by_id.get(tid, "")
             self._last_switch_time = time_now
+            self._map_pose_samples = []
+            self._base_pose_samples = []
 
         self.pub_tag_id.publish(Int32(data=int(tid)))
         self.pub_side.publish(String(data=self._active_side))

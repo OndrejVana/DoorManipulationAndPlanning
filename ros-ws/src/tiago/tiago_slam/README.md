@@ -29,61 +29,13 @@ Publishes:
 - `ekf`: wheels + visual odometry + IMU fused by `robot_localization` (previous setup).
 - `wheel`: wheel odometry from `/tf`.
 
-### RTAB-Map SLAM (development / exploration)
-
-- Simulation
+### Common commands
 
 ```bash
-roslaunch tiago_slam rtab_slam.launch world_name:="small_office"
-```
-
-- Real robot
-
-```bash
-roslaunch tiago_slam rtab_slam.launch simulation:=false
-```
-
-- Common commands
-
-```bash
-# Visualize
-rviz -d $(rospack find tiago_slam)/rviz/rtab_slam.rviz
-
-# Manual control
-rosrun key_teleop key_teleop.py /key_vel:=/mobile_base_controller/cmd_vel
-
-# Reset map (keeps database)
-rosservice call /rtabmap/reset
-
-# Delete database and start fresh
-rm ~/.ros/rtabmap.db
-
-# Save 2D map
-rosrun map_server map_saver -f ~/maps/my_map
-```
-
-### RTAB-Map Mono SLAM
-
-- Simulation
-
-```bash
-roslaunch tiago_slam rtab_mono_slam.launch world_name:="small_office"
-```
-
-- Real robot
-
-```bash
-roslaunch tiago_slam rtab_mono_slam.launch simulation:=false
-```
-
-- Common commands
-
-```bash
-rviz -d $(rospack find tiago_slam)/rviz/rtab_mono_slam.rviz
-rosrun key_teleop key_teleop.py /key_vel:=/mobile_base_controller/cmd_vel
-rosservice call /rtabmap/reset
-rm ~/.ros/rtabmap.db
-rosrun map_server map_saver -f ~/maps/my_map
+rosrun key_teleop key_teleop.py /key_vel:=/mobile_base_controller/cmd_vel  # drive around to map
+rosservice call /rtabmap/reset                                              # reset map (keeps database)
+rm ~/.ros/rtabmap.db                                                        # start fresh
+rosrun map_server map_saver -f ~/maps/my_map                                # save the 2D map
 ```
 
 ## Troubleshooting

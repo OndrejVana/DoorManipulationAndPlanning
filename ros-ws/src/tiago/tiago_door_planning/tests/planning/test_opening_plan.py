@@ -233,3 +233,17 @@ def test_a_goal_whose_grid_angle_below_is_not_passable_goes_on_to_the_next_grid_
     steps = plan_to(goal)
 
     assert final_angle(steps) >= goal - 1e-9
+
+
+def test_a_released_robot_drives_to_the_given_first_spot():
+    from tiago_door_planning.planning.grasp_spots import grasp_spots
+
+    problem = make_problem()._replace(start_grasped=False)
+    spots = grasp_spots(problem, 0.0, PARAMS.angle_step, GOAL, nearest_robot_first=False)
+    far = max(spots, key=lambda spot: np.linalg.norm(spot.pose[:2]))
+
+    steps, (minimum, _) = plan_opening(problem, PARAMS, GOAL, first_spots=[far])
+
+    first_grasp = next(step for step in steps if step.grasped)
+    assert np.allclose(first_grasp.poses[-1], far.pose)
+    assert final_angle(steps) >= minimum - 1e-9

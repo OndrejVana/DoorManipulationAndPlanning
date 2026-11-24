@@ -20,4 +20,5 @@ services:
       - ROS_IP  # passed through only when set on the host
     volumes:
       - ..:/workspace/ros-ws
+      - ${BAGS_DIR:-../../../bags}:/bags:ro # read-only bags directory
       - /tmp/.X11-unix:/tmp/.X11-unix:rw

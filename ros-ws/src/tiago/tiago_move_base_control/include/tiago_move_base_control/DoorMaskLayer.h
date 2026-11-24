@@ -1,14 +1,18 @@
 #pragma once
 
-#include <ros/ros.h>
 #include <costmap_2d/layer.h>
-#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/PolygonStamped.h>
+#include <ros/ros.h>
 #include <std_msgs/Bool.h>
+
+#include <mutex>
 #include <string>
+#include <vector>
 
 namespace tiago_move_base_control
 {
 
+// Clears the cells inside a polygon (the door leaf's swing sector) while enabled
 class DoorMaskLayer : public costmap_2d::Layer
 {
 public:
@@ -22,29 +26,36 @@ public:
   void updateCosts(costmap_2d::Costmap2D& master_grid,
                    int min_i, int min_j, int max_i, int max_j) override;
 
-  void reset() override;
+  void reset() override {}
 
 private:
-  void doorPoseCb(const geometry_msgs::PoseStampedConstPtr& msg);
-  void enabledCb(const std_msgs::BoolConstPtr& msg);
+  struct Point
+  {
+    double x;
+    double y;
+  };
 
-  // params
-  std::string door_pose_topic_;
+  void polygonCb(const geometry_msgs::PolygonStampedConstPtr& msg);
+  void enabledCb(const std_msgs::BoolConstPtr& msg);
+  // The polygon in the costmap's frame; false while TF cannot provide it.
+  bool polygonInCostmapFrame(std::vector<Point>& points);
+  static bool inside(const std::vector<Point>& polygon, double x, double y);
+
+  std::string polygon_topic_;
   std::string enabled_topic_;
-  bool enabled_;
-  double width_m_;
-  double thickness_m_;
-  double margin_m_;
   bool set_unknown_;
 
-  // state
-  ros::Subscriber door_pose_sub_;
+  ros::Subscriber polygon_sub_;
   ros::Subscriber enabled_sub_;
-  geometry_msgs::PoseStamped last_pose_;
-  bool have_pose_;
 
-  // cached AABB for updateBounds
-  double last_min_x_, last_min_y_, last_max_x_, last_max_y_;
+  std::mutex mutex_;
+  geometry_msgs::PolygonStamped polygon_;
+  bool have_polygon_;
+  bool enabled_;
+  // Area last masked, repainted once after the mask is disabled or moved.
+  bool repaint_;
+  double repaint_min_x_, repaint_min_y_, repaint_max_x_, repaint_max_y_;
+  std::vector<Point> masked_;
 };
 
 }  // namespace tiago_move_base_control

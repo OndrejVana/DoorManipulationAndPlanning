@@ -7,6 +7,7 @@ from tiago_door_planning.model.collision import (
     CollisionParams,
     arms_collide,
     base_costmap_clearance,
+    clear_under_robot,
     distance_grid,
     robot_collides,
     spheres_in_world,
@@ -78,3 +79,16 @@ def test_arms_collide_only_when_their_spheres_come_closer_than_the_margin():
 
     assert arms_collide(left, near, PARAMS)
     assert not arms_collide(left, far, PARAMS)
+
+
+def test_cells_under_the_robot_are_freed_and_counted():
+    occupancy = np.zeros((20, 20))
+    occupancy[10, 10] = 100.0  # under the robot at (0.525, 0.525)
+    occupancy[10, 18] = 100.0  # 0.4 m away
+    cleared, count = clear_under_robot(occupancy, 0.05, [0.0, 0.0], [0.525, 0.525], 0.3)
+
+    assert count == 1
+    assert cleared[10, 10] == 0.0 and cleared[10, 18] == 100.0
+    assert occupancy[10, 10] == 100.0
+    grid = distance_grid(cleared, 0.05, [0.0, 0.0], 100)
+    assert base_costmap_clearance(grid, np.array([0.525, 0.525, 0.0]), PARAMS) == pytest.approx(0.1)

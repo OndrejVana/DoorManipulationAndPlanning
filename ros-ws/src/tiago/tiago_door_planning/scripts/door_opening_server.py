@@ -2,6 +2,7 @@
 """Action server opening a door: plan the grasp and the opening, grasp, then track the grasped segments"""
 
 import collections
+import threading
 
 import actionlib
 import numpy as np
@@ -17,10 +18,16 @@ from tiago_door_planning.motion.arm_moves import (
     grasp_motion,
 )
 from tiago_door_planning.motion.arm_moves import path_leaves_clear, release_paths
-from tiago_door_planning.model.collision import FREE, GRASP, distance_grid
+from tiago_door_planning.model.collision import FREE, GRASP, clear_under_robot, distance_grid
 from tiago_door_planning.planning.door_planner import Grip, PlanningProblem
+from tiago_door_planning.planning.approach import approach_spots
+from tiago_door_planning.planning.pass_plan import plan_pass
 from tiago_door_planning.sensing.door_sensing import door_estimate, hand_off_door
-from tiago_door_planning.model.geometry import rotation_to_quaternion, wrap_angle
+from tiago_door_planning.model.geometry import (
+    make_pose,
+    rotation_to_quaternion,
+    wrap_angle,
+)
 from tiago_door_planning.motion.grasp_motion import (
     joint_path,
     line_path,
@@ -60,8 +67,20 @@ from tiago_door_planning.msg import (
     ExecuteDoorSegmentAction,
     ExecuteDoorSegmentGoal,
     OpenDoorAction,
+    PassDoorAction,
 )
-from tiago_door_planning.msg import OpenDoorFeedback, OpenDoorResult
+from tiago_door_planning.msg import (
+    OpenDoorFeedback,
+    OpenDoorResult,
+    PassDoorFeedback,
+    PassDoorResult,
+)
+from tiago_door_planning.srv import (
+    MeasureDoor,
+    MeasureDoorResponse,
+    PlanApproach,
+    PlanApproachResponse,
+)
 from tiago_door_planning.planning.opening_plan import plan_opening, stop_angle
 from tiago_door_planning.planning.plan_output import plan_to_segments
 from tiago_door_planning.ros.robot import (
@@ -82,7 +101,7 @@ from tiago_door_planning.motion.trajectory import (
     straight_drive,
 )
 
-COSTMAP_TOPIC = "/tiago_move_base/move_base/global_costmap/costmap"
+SEGMENT_TIMEOUT_MARGIN_S = 10.0
 
 OpeningPlan = collections.namedtuple("OpeningPlan", "move approach segments")
 DoorProgress = collections.namedtuple("DoorProgress", "angle regrasps")
@@ -116,11 +135,15 @@ def pose_msg(frame, pose):
     return msg
 
 
-def occupancy_to_grid(msg, occupied_threshold):
+def occupancy_to_grid(msg, occupied_threshold, base_xy, clear_radius):
+    """The distance grid, with the cells under the robot freed; (grid, number of occupied cells freed)."""
     info = msg.info
     occupancy = np.array(msg.data, dtype=float).reshape(info.height, info.width)
     origin = [info.origin.position.x, info.origin.position.y]
-    return distance_grid(occupancy, info.resolution, origin, occupied_threshold)
+    occupancy, cleared = clear_under_robot(
+        occupancy, info.resolution, origin, base_xy, clear_radius
+    )
+    return distance_grid(occupancy, info.resolution, origin, occupied_threshold), cleared
 
 
 def segment_goal(goal, scene, trajectory, grasped, action, free_wrench):
@@ -144,6 +167,9 @@ def segment_goal(goal, scene, trajectory, grasped, action, free_wrench):
 
 
 class DoorOpeningServer(object):
+    """open_door and pass_door, plus the plan_approach and measure_door services; one request at a time, since they
+    share the robot and the door set up for the request."""
+
     def __init__(self):
         self._config = config = apply_pipeline_speed(rospy.get_param("~"))
         self._grasp_config = config["grasp"]
@@ -153,65 +179,132 @@ class DoorOpeningServer(object):
         )
         self._max_sweep = np.radians(config["grasp"]["max_sweep_deg"])
         self._robot = Robot(config, with_moves=True)
+        self._busy = threading.Lock()
+        self._active = None
         self._segment_client = actionlib.SimpleActionClient(
             "execute_door_segment", ExecuteDoorSegmentAction
         )
         self._server = actionlib.SimpleActionServer(
             "open_door", OpenDoorAction, self._execute, auto_start=False
         )
+        self._pass_server = actionlib.SimpleActionServer(
+            "pass_door", PassDoorAction, self._execute_pass, auto_start=False
+        )
+        rospy.Service("plan_approach", PlanApproach, self._on_plan_approach)
+        rospy.Service("measure_door", MeasureDoor, self._on_measure_door)
         self._server.start()
+        self._pass_server.start()
 
-    # The action
+    # The actions and services
 
     def _execute(self, goal):
-        self._goal, self._push = goal, goal.push
-        self._door_angle, self._passable_angle, self._laser_decided = 0.0, np.inf, False
-        self._goals = None
-        self._holding, self._holding_action, self._approach = None, None, None
-        self._free_wrench = None
-        self._released_q = None
         result = OpenDoorResult()
-        try:
-            self._open()
-            result.success, result.message = True, "door opened"
-        except OpeningFailed as error:
-            result.success, result.message = False, str(error)
+        result.success, result.message = self._run_exclusive(
+            self._server, goal, self._open, "door opened"
+        )
         result.final_door_angle = self._door_angle
         rospy.loginfo(
             "[DoorOpening] %s (door angle %.1f deg)",
             result.message,
             np.degrees(self._door_angle),
         )
+        self._finish(self._server, result)
+
+    def _execute_pass(self, goal):
+        result = PassDoorResult()
+        result.success, result.message = self._run_exclusive(
+            self._pass_server, goal, self._pass, "passed the door"
+        )
+        rospy.loginfo("[DoorOpening] %s", result.message)
+        self._finish(self._pass_server, result)
+
+    def _run_exclusive(self, server, goal, run, done):
+        """(success, message) of run(); any error, not only an OpeningFailed, ends the goal with its message."""
+        if not self._busy.acquire(False):
+            return False, "busy with another door request"
+        self._active = server
+        self._start_request(goal)
+        try:
+            return (True, run() or done)
+        except OpeningFailed as error:
+            return False, str(error)
+        except Exception as error:  # a goal must always end with a result
+            rospy.logerr("[DoorOpening] %s", error, exc_info=True)
+            return False, "internal error: %s" % error
+        finally:
+            self._active = None
+            self._busy.release()
+
+    @staticmethod
+    def _finish(server, result):
         if result.message == "preempted":
-            self._server.set_preempted(result)
+            server.set_preempted(result)
         elif result.success:
-            self._server.set_succeeded(result)
+            server.set_succeeded(result)
         else:
-            self._server.set_aborted(result)
+            server.set_aborted(result)
+
+    def _start_request(self, goal):
+        self._goal, self._push = goal, goal.push
+        self._door_angle, self._passable_angle, self._laser_decided = 0.0, np.inf, False
+        self._goals = None
+        self._holding, self._holding_action, self._approach = None, None, None
+        self._free_wrench = None
+        self._released_q = None
+        self._last_grip = None
 
     def _stage(self, text):
         rospy.loginfo("[DoorOpening] %s", text)
-        feedback = OpenDoorFeedback()
+        if self._active is None:
+            return
+        feedback = (
+            OpenDoorFeedback() if self._active is self._server else PassDoorFeedback()
+        )
         feedback.stage = text
-        self._server.publish_feedback(feedback)
-        if self._server.is_preempt_requested():
+        self._active.publish_feedback(feedback)
+        self._raise_if_preempted()
+
+    def _raise_if_preempted(self):
+        if self._active is not None and self._active.is_preempt_requested():
             raise OpeningFailed("preempted")
 
     def _open(self):
-        self._robot.require_wrench(self._grasp_config["arms"])
+        """Ends holding the handle, or released with the arm parked when the goal asks for release_at_end; a plan-only
+        goal returns the plan's description."""
+        if not self._goal.plan_only:
+            self._robot.require_wrench(self._grasp_config["arms"])
         self._stage("planning")
         self._set_up_door()
         plan = self._choose_plan()
+        if self._goal.plan_only:
+            return "planned: %s" % "; ".join(describe_segment(s) for s in plan.segments)
         grip = self._last_grip = segment_grip(plan.segments[0])
-        if self._starts_released(plan):
-            self._released_q = plan.approach[-1]
+        if plan.move is None or self._starts_released(plan):
+            self._released_q = None if plan.approach is None else plan.approach[-1]
         else:
             self._stage("grasp 1 with the %s arm" % grip.arm)
             self._grasp(
                 grip.arm, plan.move, plan.approach, grasp_action(self._push, grip.face)
             )
             self._measure_door(self._scenes["front"], self._offsets[grip])
-        self._open_with_recoveries(plan.segments)
+        try:
+            self._open_with_recoveries(plan.segments)
+        except OpeningFailed as error:
+            if self._goal.release_at_end and str(error) != "preempted":
+                self._let_go_after_failure()
+            raise
+        if self._goal.release_at_end:
+            self._let_go(self._scenes[self._last_grip.face], self._last_grip.arm)
+        return None
+
+    def _let_go_after_failure(self):
+        """Best effort: a failed opening leaves the hand open and the arm parked when it can."""
+        if self._last_grip is None:
+            return
+        try:
+            self._let_go(self._scenes[self._last_grip.face], self._last_grip.arm)
+        except Exception as error:  # the failure being reported matters more
+            rospy.logwarn("[DoorOpening] could not let go after the failure: %s", error)
 
     def _starts_released(self, plan):
         """A plan that lets go of the handle before moving the door needs no first grasp; the robot drives first."""
@@ -237,6 +330,115 @@ class DoorOpeningServer(object):
         self._offsets = grasp_offsets(
             self._config, self._push, self._scenes, self._normals
         )
+
+    def _on_plan_approach(self, request):
+        response = PlanApproachResponse()
+        if not self._busy.acquire(False):
+            response.message = "busy with another door request"
+            return response
+        try:
+            self._start_request(request)
+            self._set_up_door()
+            approaches = self._approach_spots()
+            response.poses = [
+                pose_msg(self._frame, make_pose([a.spot.pose[0], a.spot.pose[1], 0.0], a.spot.pose[2]))
+                for a in approaches
+            ]
+            response.success = bool(approaches)
+            response.message = (
+                "%d base poses open the door, the best with %d grasps in %.0f s"
+                % (len(approaches), approaches[0].grasps, approaches[0].duration)
+                if approaches
+                else "no base pose near the handle opens the door"
+            )
+        except Exception as error:  # the caller gets the reason
+            rospy.logerr("[DoorOpening] %s", error, exc_info=True)
+            response.message = "internal error: %s" % error
+        finally:
+            self._busy.release()
+        rospy.loginfo("[DoorOpening] plan_approach: %s", response.message)
+        return response
+
+    def _approach_spots(self):
+        """Base poses to grasp the closed door from, each with an opening planned from it, best first."""
+        side = self._grasp_config["arms"][0]
+        problem = self._problem(
+            self._base_pose(), self._offsets, Grip(side, "front"), self._robot.q(side), False
+        )
+        started = rospy.get_time()
+        approaches = approach_spots(
+            problem,
+            planner_params(self._config, self._push),
+            goal_params(self._config),
+            self._config["goal"]["approach_plans"],
+            lambda text: rospy.loginfo("[DoorOpening] approach: %s", text),
+        )
+        rospy.loginfo(
+            "[DoorOpening] approach planning took %.1f s: %s",
+            rospy.get_time() - started,
+            "; ".join(
+                "%s (%d grasps, %.0f s)" % (rounded(a.spot.pose), a.grasps, a.duration)
+                for a in approaches
+            ),
+        )
+        return approaches
+
+    def _on_measure_door(self, request):
+        response = MeasureDoorResponse()
+        if not self._busy.acquire(False):
+            response.message = "busy with another door request"
+            return response
+        try:
+            self._start_request(request)
+            self._frame = request.hinge_pose.header.frame_id
+            self._scenes = door_scenes(
+                pose_msg_to_matrix(request.hinge_pose.pose),
+                pose_msg_to_matrix(request.handle_pose.pose),
+                request.hinge_side,
+                request.push,
+                self._config,
+            )
+            reading = self._door_reading(self._scenes["front"])
+            if reading is None:
+                response.message = "no scan"
+            else:
+                response.seen = reading.angle is not None
+                response.angle = reading.angle if response.seen else 0.0
+                response.at_least = reading.at_least
+                response.message = describe_reading(reading)
+        except Exception as error:  # the caller gets the reason
+            rospy.logerr("[DoorOpening] %s", error, exc_info=True)
+            response.message = "internal error: %s" % error
+        finally:
+            self._busy.release()
+        return response
+
+    def _pass(self):
+        """Drives the released robot through the doorway past the leaf where the opening left it."""
+        self._stage("planning the way through the door")
+        self._set_up_door()
+        self._door_angle = self._goal.door_angle
+        scene = self._scenes["front"]
+        self._door_seen_moved(scene)
+        side = self._grasp_config["arms"][0]
+        problem = self._problem(
+            self._base_pose(), self._offsets, Grip(side, "front"), self._home[side], False
+        )
+        steps = plan_pass(
+            problem,
+            planner_params(self._config, self._push),
+            goal_params(self._config),
+            self._config["pass"]["distances"],
+        )
+        if steps is None:
+            raise OpeningFailed(
+                "no way through the door with the leaf at %.0f deg" % np.degrees(self._door_angle)
+            )
+        planner = self._config["planner"]
+        for segment in plan_to_segments(steps, planner["drive_ramp_s"]):
+            self._stage("driving through the door")
+            self._run_segment(scene, segment.trajectory, False)
+        return None
 
     def _open_with_recoveries(self, segments):
         """A recovery that fails itself, say when the arm cannot fold, counts as the next failed segment."""
@@ -310,18 +512,43 @@ class DoorOpeningServer(object):
         return best
 
     def _plan_for(self, side):
+        """From a base the arm cannot grasp from, the plan starts released and drives onto a grasp spot first."""
         self._stage("planning with the %s arm" % side)
         grip = Grip(side, "front")
         base_pose = self._base_pose()
-        move, approach = self._plan_grasp(self._scenes["front"], grip, None)
+        try:
+            move, approach = self._plan_grasp(self._scenes["front"], grip, None)
+        except OpeningFailed as error:
+            rospy.loginfo("[DoorOpening] %s arm: %s here; driving to a grasp first", side, error)
+            return OpeningPlan(
+                None,
+                None,
+                self._plan_opening(
+                    base_pose,
+                    self._offsets,
+                    grip,
+                    self._robot.q(side),
+                    grasped=False,
+                    first_spots=self._first_spots(base_pose, grip),
+                ),
+            )
         return OpeningPlan(
             move,
             approach,
             self._plan_opening(base_pose, self._offsets, grip, approach[-1]),
         )
 
-    def _plan_opening(self, base_pose, offsets, grip, grasp_q, grasped=True):
-        """Replans keep the goal angles of the first plan; the door and the costmap stay the same."""
+    def _first_spots(self, base_pose, grip):
+        """The spots plan_approach would send the robot to; the nearest grasp spots may not open the door far."""
+        approaches = approach_spots(
+            self._problem(base_pose, self._offsets, grip, self._robot.q(grip.arm), False),
+            planner_params(self._config, self._push),
+            goal_params(self._config),
+            self._config["goal"]["approach_plans"],
+        )
+        return [approach.spot for approach in approaches] or None
+
+    def _problem(self, base_pose, offsets, grip, start_q, grasped):
         checks = arm_checks(
             self._config,
             self._push,
@@ -331,24 +558,30 @@ class DoorOpeningServer(object):
             self._arms,
             self._home,
         )
-        problem = PlanningProblem(
+        return PlanningProblem(
             self._scenes["front"],
             self._grid,
             base_pose,
             self._door_angle,
-            grasp_q,
+            start_q,
             self._home[grip.arm],
             checks,
             grip,
             grasped,
             self._collision,
         )
+
+    def _plan_opening(self, base_pose, offsets, grip, grasp_q, grasped=True, first_spots=None):
+        """Replans keep the goal angles of the first plan; every plan reads the costmap afresh."""
+        self._grid = self._costmap()
+        problem = self._problem(base_pose, offsets, grip, grasp_q, grasped)
         started = rospy.get_time()
         steps, self._goals = plan_opening(
             problem,
             planner_params(self._config, self._push),
             goal_params(self._config),
             self._goals,
+            first_spots,
         )
         rospy.loginfo(
             "[DoorOpening] planning took %.1f s%s",
@@ -560,14 +793,31 @@ class DoorOpeningServer(object):
         )
 
     def _run_segment(self, scene, trajectory, grasped):
-        self._segment_client.wait_for_server(rospy.Duration(5.0))
-        self._segment_client.send_goal(
+        """A preempt cancels the running segment; a tracker that never answers fails it after the tracker's own
+        timeout plus a margin."""
+        client = self._segment_client
+        if not client.wait_for_server(rospy.Duration(5.0)):
+            raise OpeningFailed("no execute_door_segment server")
+        client.send_goal(
             segment_goal(
                 self._goal, scene, trajectory, grasped, self._holding_action, self._free_wrench
             )
         )
-        self._segment_client.wait_for_result()
-        result = self._segment_client.get_result()
+        duration = len(trajectory.door_angles) * trajectory.sample_period
+        deadline = (
+            rospy.get_time()
+            + self._config["tracking"]["timeout_factor"] * duration
+            + SEGMENT_TIMEOUT_MARGIN_S
+        )
+        while not client.wait_for_result(rospy.Duration(0.1)):
+            if self._active is not None and self._active.is_preempt_requested():
+                client.cancel_goal()
+                client.wait_for_result(rospy.Duration(2.0))
+                raise OpeningFailed("preempted")
+            if rospy.get_time() > deadline or rospy.is_shutdown():
+                client.cancel_goal()
+                raise SegmentFailed("door segment did not end in time")
+        result = client.get_result()
         if result is None:
             raise OpeningFailed("door segment returned no result")
         self._door_angle, self._laser_decided = result.final_door_angle, False
@@ -856,18 +1106,38 @@ class DoorOpeningServer(object):
         return self._robot.base_pose(self._frame, timeout=2.0)
 
     def _costmap(self):
+        """The latest costmap; one in another frame than the door would put obstacles in the wrong place. The robot's
+        own footprint is free."""
         costmap = self._config["costmap"]
         try:
             msg = rospy.wait_for_message(
-                COSTMAP_TOPIC, OccupancyGrid, timeout=costmap["timeout_s"]
+                costmap["topic"], OccupancyGrid, timeout=costmap["timeout_s"]
             )
         except rospy.ROSException:
             rospy.logwarn(
                 "[DoorOpening] no costmap on %s, planning with the door scene only",
-                COSTMAP_TOPIC,
+                costmap["topic"],
             )
             return None
-        return occupancy_to_grid(msg, costmap["occupied_threshold"])
+        if msg.header.frame_id.lstrip("/") != self._frame.lstrip("/"):
+            rospy.logwarn(
+                "[DoorOpening] costmap in %s, door in %s: planning with the door scene only",
+                msg.header.frame_id,
+                self._frame,
+            )
+            return None
+        grid, cleared = occupancy_to_grid(
+            msg,
+            costmap["occupied_threshold"],
+            self._base_pose()[:2],
+            self._collision.base_radius + self._collision.margin,
+        )
+        if cleared:
+            rospy.loginfo(
+                "[DoorOpening] costmap: %d occupied cells under the robot taken as free",
+                cleared,
+            )
+        return grid
 
     def _log_grasp(self, measured, grip, planned_q):
         offset = self._offsets[grip]

@@ -20,6 +20,13 @@ add_action_files(
   FILES
     ExecuteDoorSegment.action
     OpenDoor.action
+    PassDoor.action
+)
+
+add_service_files(
+  FILES
+    MeasureDoor.srv
+    PlanApproach.srv
 )
 
 generate_messages(
@@ -48,6 +55,6 @@ catkin_install_python(PROGRAMS
 install(DIRECTORY src/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_PYTHON_DESTINATION}
 )
-install(DIRECTORY launch config action rviz
+install(DIRECTORY launch config action srv rviz
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )

@@ -70,12 +70,16 @@ def handle_pose(scene, angle):
 
 
 def back_handle(scene):
-    """The handle on the other face: mirrored through the middle of the leaf, turned to face the other way."""
+    """The handle on the other face: mirrored through the middle of the leaf, z out of the other face and, pushed on,
+    y down like a push handle whichever way up the tag model turned the front one."""
     _, _, away = _door_axes(scene, 0.0)
     middle = scene.hinge + away * scene.dimensions.thickness / 2.0
     handle = scene.handle_closed.copy()
     handle[:3, 3] -= 2.0 * ((handle[:3, 3] - middle) @ away) * away
-    handle[:3, :3] = rotation_z(np.pi) @ handle[:3, :3]
+    out = -handle[:3, 2] * [1.0, 1.0, 0.0]
+    out /= np.linalg.norm(out)
+    down = np.array([0.0, 0.0, -1.0])
+    handle[:3, :3] = np.column_stack([np.cross(down, out), down, out])
     return handle
 
 
@@ -119,3 +123,21 @@ def wall_boxes(scene):
     hinge_side = _wall_box(scene, -dims.wall_length, 0.0)
     latch_side = _wall_box(scene, dims.width, dims.width + dims.wall_length)
     return [hinge_side, latch_side]
+
+
+def swing_polygon(scene, max_angle, margin, arc_points=12):
+    """(N, 2) polygon around everywhere the leaf can be between closed and max_angle, grown by margin: the swept
+    sector plus the closed leaf's thickness on the side it does not swing to."""
+    dims = scene.dimensions
+    _, along, away = _door_axes(scene, 0.0)
+    radius = dims.width + margin
+    behind = away * (dims.thickness + margin)
+    hinge = scene.hinge
+    corners = [hinge - along * margin + behind, hinge + along * radius + behind]
+    arc = [
+        hinge + _door_axes(scene, angle)[1] * radius
+        for angle in np.linspace(0.0, max_angle, arc_points)
+    ]
+    _, last_along, last_away = _door_axes(scene, max_angle)
+    closing = [hinge - last_away * margin, hinge - last_along * margin - last_away * margin]
+    return np.array([point[:2] for point in corners + arc + closing])

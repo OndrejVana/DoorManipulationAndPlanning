@@ -12,6 +12,10 @@ catkin_package()
 # Check launch files for syntax errors
 roslaunch_add_file_check(launch)
 
-install(DIRECTORY launch/
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+install(DIRECTORY launch rviz
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
+
+install(PROGRAMS scripts/replay.sh
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

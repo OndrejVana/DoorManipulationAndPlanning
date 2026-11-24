@@ -1,0 +1,62 @@
+# Door mission (tiago_door_mission/door_mission_node.py).
+
+# Plan without moving
+dry_run: false
+frame: map
+
+# Tuck the arms before moving
+tuck_arms: true
+tuck_motion: home
+tuck_timeout_s: 60.0
+
+# Door model
+lock:
+  samples: 20
+  timeout_s: 8.0
+  skip_samples: 12
+  min_samples: 8
+  attempts: 3
+  far:
+    max_position_spread: 0.06
+    max_yaw_spread_deg: 15.0
+  near:
+    max_position_spread: 0.03
+    max_yaw_spread_deg: 3.0
+
+# Viewing pose for the near lock.
+view:
+  distances: [1.2, 1.0, 1.4]
+  max_distance: 1.5
+  max_angle_deg: 35.0
+
+head:
+  enabled: true
+  pointing_frame: xtion_rgb_optical_frame
+  min_duration_s: 1.0
+  max_velocity: 0.6
+  timeout_s: 6.0
+  settle_s: 1.0
+
+# A leaf the laser sees further open than this is not closed
+closed_tolerance_deg:
+  far: 10.0
+  near: 4.0
+
+# Swing sector cleared from the global costmap (DoorMaskLayer)
+mask:
+  polygon_topic: /door_mask/polygon
+  enabled_topic: /door_mask/enabled
+  max_angle_deg: 100.0
+  margin: 0.15
+  settle_s: 1.0
+
+costmap_topic: /tiago_move_base/move_base/global_costmap/costmap
+costmap_wait_s: 5.0
+
+move_base_action: /tiago_move_base/move_base
+approach_attempts: 3  # approach poses tried with move_base, nearest first
+nav_timeout_s: 90.0
+
+open_attempts: 2  # full approach + open_door attempts while the door stays closed
+open_timeout_s: 900.0
+pass_timeout_s: 180.0

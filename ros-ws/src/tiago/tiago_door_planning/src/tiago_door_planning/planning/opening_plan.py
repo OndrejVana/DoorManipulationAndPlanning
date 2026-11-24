@@ -96,10 +96,12 @@ def _nearest_spot(spots, pose):
     return spots[int(np.argmin(gaps))]
 
 
-def _drive_and_grasp(released, params, goal_params):
-    """Steps that drive onto a spot where some grip moves the door one step further, ending with the grasp there."""
+def _drive_and_grasp(released, params, goal_params, spots=None):
+    """Steps that drive onto a spot where some grip moves the door one step further, ending with the grasp there;
+    spots, when given, are the ones to drive to."""
     angle = released.start_angle
-    spots = grasp_spots(released, angle, angle + params.angle_step, goal_params)
+    if spots is None:
+        spots = grasp_spots(released, angle, angle + params.angle_step, goal_params)
     if not spots:
         return None
     distances = drive_map(released, angle, spots, goal_params)
@@ -132,11 +134,11 @@ def _extend(problem, params, goal_params, steps, cap, in_place):
     return steps + extension[1:]
 
 
-def _open_from_start(problem, params, goal_params, in_place):
-    """A released robot first drives onto a grasp spot and grasps there."""
+def _open_from_start(problem, params, goal_params, in_place, first_spots=None):
+    """A released robot first drives onto a grasp spot, one of first_spots when given, and grasps there."""
     if problem.start_grasped:
         return _open_with_regrasps(problem, params, goal_params, in_place)
-    regrasp = _drive_and_grasp(problem, params, goal_params)
+    regrasp = _drive_and_grasp(problem, params, goal_params, first_spots)
     if regrasp is None:
         return None
     return (
@@ -147,18 +149,19 @@ def _open_from_start(problem, params, goal_params, in_place):
     )
 
 
-def plan_opening(problem, params, goal_params, goals=None):
+def plan_opening(problem, params, goal_params, goals=None, first_spots=None):
     """Return (steps, goals): goals is (passable angle, cap) or None, steps is None without a passable plan. The
-    robot may start holding the handle or released. Goals already known skip their costly search.
+    robot may start holding the handle or released; a released one drives to one of first_spots, when given, for its
+    first grasp. Goals already known skip their costly search.
     """
     goals = goals or goal_range(problem, goal_params, params.angle_step)
     if goals is None:
         return None, None
     minimum, cap = goals
-    finished = _finished_off_grid(problem, params, goal_params, minimum)
+    finished = _finished_off_grid(problem, params, goal_params, minimum, first_spots)
     if finished is not None:
         return finished, goals
-    steps = _passable_steps(problem, params._replace(goal_angle=minimum), goal_params)
+    steps = _passable_steps(problem, params._replace(goal_angle=minimum), goal_params, first_spots)
     if steps is None:
         return None, goals
     in_place = not goal_params.spot_regrasps_first
@@ -169,7 +172,7 @@ def _grid_below(angle, angle_step):
     return np.floor(angle / angle_step + 1e-9) * angle_step
 
 
-def _finished_off_grid(problem, params, goal_params, goal):
+def _finished_off_grid(problem, params, goal_params, goal, first_spots=None):
     """A goal between grid angles"""
     search_goal = _grid_below(goal, params.angle_step)
     passable = passable_angle(
@@ -181,7 +184,7 @@ def _finished_off_grid(problem, params, goal_params, goal):
     if search_goal >= goal - 1e-9 or passable is None or search_goal < passable - 1e-9:
         return None
     steps = _passable_steps(
-        problem, params._replace(goal_angle=search_goal), goal_params
+        problem, params._replace(goal_angle=search_goal), goal_params, first_spots
     )
     if steps is None or _final_angle(steps) >= goal - 1e-9:
         return steps
@@ -204,11 +207,11 @@ def stop_angle(goals, steps):
     return min(goals[0], _final_angle(steps))
 
 
-def _passable_steps(problem, params, goal_params):
+def _passable_steps(problem, params, goal_params, first_spots=None):
     """A regrasp in place costs a whole release and grasp for a few degrees, so with spot_regrasps_first regrasps go
     through grasp spots first and in place only when that finds no passable plan."""
     for in_place in (False, True) if goal_params.spot_regrasps_first else (True,):
-        steps = _open_from_start(problem, params, goal_params, in_place)
+        steps = _open_from_start(problem, params, goal_params, in_place, first_spots)
         if steps is not None and _final_angle(steps) >= params.goal_angle - 1e-9:
             return steps
     return None

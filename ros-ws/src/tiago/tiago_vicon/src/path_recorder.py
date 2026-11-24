@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
-from std_srvs.srv import Empty, EmptyResponse, Trigger, TriggerResponse
+from std_srvs.srv import Trigger, TriggerResponse
 
 
 class PathRecorder:

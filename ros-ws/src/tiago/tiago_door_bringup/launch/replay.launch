@@ -1,27 +1,57 @@
 <?xml version="1.0"?>
+<!-- Replays a record_bag.sh recording through SLAM, perception, the costmap and the door servers; the mission runs
+     as a dry run (plans only). Easiest through scripts/replay.sh <bag dir>. -->
 <launch>
-  <arg name="bag"                    doc="Absolute path to the .bag file to replay"/>
-  <arg name="use_door_localization"  default="true"/>
-  <arg name="loop"                   default="false"/>
+  <arg name="bags"                   doc="Space-separated .bag files of one recording"/>
+  <arg name="urdf"                   doc="robot_description.urdf saved next to the bags"/>
   <arg name="rate"                   default="1.0"/>
+  <arg name="start"                  default="0" doc="Seconds into the bag to start at"/>
   <arg name="rviz"                   default="true"/>
-
+  <arg name="mission"                default="true" doc="Dry-run mission, started after mission_delay"/>
+  <arg name="mission_delay"          default="30" doc="Wall seconds before /door_mission/start (SLAM map, tag in view)"/>
+  <arg name="camera_prefix"          default="/slam_relay" doc="Prefix the bag recorded the camera under (info.txt)"/>
   <arg name="door_config" default="$(find tiago_door_localization)/config/apriltag_two_sided_door.yaml"/>
 
   <param name="/use_sim_time" value="true"/>
+  <param name="robot_description" textfile="$(arg urdf)"/>
 
+  <!-- The recorded map -> odom came from the live SLAM; the replayed SLAM publishes its own. -->
   <node pkg="rosbag" type="play" name="rosbag_play" output="screen"
-        args="--clock --rate $(arg rate) $(eval '--loop' if arg('loop') else '') $(arg bag)"/>
+        args="--clock --rate $(arg rate) --start $(arg start) $(arg bags) /tf:=/tf_bag"/>
+  <node name="bag_tf_filter" pkg="tiago_slam" type="tf_filter.py">
+    <param name="keep_odom_base" value="true"/>
+    <remap from="tf_in"         to="/tf_bag"/>
+    <remap from="tf_static_in"  to="/tf_static_bag"/>
+    <remap from="tf_out"        to="/tf"/>
+    <remap from="tf_static_out" to="/tf_static_bag_filtered"/>
+  </node>
 
-  <group if="$(arg use_door_localization)">
-    <include file="$(find tiago_door_localization)/launch/door_preception_tags.launch">
-      <arg name="config" value="$(arg door_config)"/>
+  <include file="$(find tiago_slam)/launch/tiago_slam.launch">
+    <arg name="relay" value="$(eval arg('camera_prefix') != '')"/>
+    <arg name="relay_prefix" value="$(arg camera_prefix)"/>
+  </include>
+
+  <include file="$(find tiago_door_localization)/launch/door_preception_tags.launch">
+    <arg name="config" value="$(arg door_config)"/>
+    <arg name="image_transport" value="raw"/>
+    <arg name="image_topic" value="$(arg camera_prefix)/xtion/rgb/image_rect_color"/>
+    <arg name="camera_info_topic" value="$(arg camera_prefix)/xtion/rgb/camera_info"/>
+  </include>
+
+  <include file="$(find tiago_move_base_control)/launch/tiago_move_base.launch"/>
+  <include file="$(find tiago_door_planning)/launch/door_opening.launch"/>
+
+  <group if="$(arg mission)">
+    <include file="$(find tiago_door_mission)/launch/door_mission.launch">
+      <arg name="dry_run" value="true"/>
     </include>
+    <node pkg="rosservice" type="rosservice" name="start_mission" output="screen"
+          args="call --wait /door_mission/start"
+          launch-prefix="bash -c 'sleep $(arg mission_delay); $0 $@'"/>
   </group>
 
   <group if="$(arg rviz)">
     <node pkg="rviz" type="rviz" name="rviz" output="screen"
-          args="-d $(find tiago_door_bringup)/rviz/tiago_door_nav.rviz"/>
+          args="-d $(find tiago_door_bringup)/rviz/tiago_door_main.rviz"/>
   </group>
-
 </launch>

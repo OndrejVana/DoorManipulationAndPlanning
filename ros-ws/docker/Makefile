@@ -23,7 +23,7 @@ build-all:
 		catkin build -p $(CATKIN_PKGS) -j $(CATKIN_JOBS); rc=\$$?; $(CHOWN); exit \$$rc"
 
 test:
-	docker compose exec dev bash -lc "python3 -m pytest -q -p no:cacheprovider src/tiago/tiago_door_planning/tests"
+	docker compose exec dev bash -lc "python3 -m pytest -q -p no:cacheprovider src/tiago/tiago_door_planning/tests src/tiago/tiago_door_mission/tests"
 
 down:
 	docker compose down

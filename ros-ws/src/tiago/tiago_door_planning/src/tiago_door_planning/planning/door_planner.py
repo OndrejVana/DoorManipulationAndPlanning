@@ -170,10 +170,15 @@ class Planner(object):
         return max(0.0, float(np.min(times)), around / self.params.linear_speed)
 
     def heuristic(self, state):
-        """A released robot has to drive to a grasp spot and grasp again before the door moves."""
+        """A released robot has to drive to a grasp spot and grasp again before the door moves; one only driving to
+        given spots has just the drive left."""
         remaining = max(0, self.goal_door - state.door)
         door_time = remaining * self.params.angle_step / self.params.door_rate
-        if state.grasped or remaining == 0:
+        if state.grasped:
+            return door_time
+        if self.grasp_spots is not None:
+            return door_time + self.drive_to_grasp_time(state)
+        if remaining == 0:
             return door_time
         return (
             door_time + self.params.regrasp_time / 2.0 + self.drive_to_grasp_time(state)
