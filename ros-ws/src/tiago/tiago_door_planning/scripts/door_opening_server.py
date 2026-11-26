@@ -21,6 +21,7 @@ from tiago_door_planning.motion.arm_moves import path_leaves_clear, release_path
 from tiago_door_planning.model.collision import FREE, GRASP, clear_under_robot, distance_grid
 from tiago_door_planning.planning.door_planner import Grip, PlanningProblem
 from tiago_door_planning.planning.approach import approach_spots
+from tiago_door_planning.planning.door_goal import passable_angle
 from tiago_door_planning.planning.pass_plan import plan_pass
 from tiago_door_planning.sensing.door_sensing import door_estimate, hand_off_door
 from tiago_door_planning.model.geometry import (
@@ -80,6 +81,8 @@ from tiago_door_planning.srv import (
     MeasureDoorResponse,
     PlanApproach,
     PlanApproachResponse,
+    TrackDoorLeaf,
+    TrackDoorLeafRequest,
 )
 from tiago_door_planning.planning.opening_plan import plan_opening, stop_angle
 from tiago_door_planning.planning.plan_output import plan_to_segments
@@ -102,6 +105,7 @@ from tiago_door_planning.motion.trajectory import (
 )
 
 SEGMENT_TIMEOUT_MARGIN_S = 10.0
+PASSABLE_ANGLE_STEP = np.radians(1.0)
 
 OpeningPlan = collections.namedtuple("OpeningPlan", "move approach segments")
 DoorProgress = collections.namedtuple("DoorProgress", "angle regrasps")
@@ -192,6 +196,7 @@ class DoorOpeningServer(object):
         )
         rospy.Service("plan_approach", PlanApproach, self._on_plan_approach)
         rospy.Service("measure_door", MeasureDoor, self._on_measure_door)
+        self._track_leaf = rospy.ServiceProxy("track_door_leaf", TrackDoorLeaf)
         self._server.start()
         self._pass_server.start()
 
@@ -224,6 +229,7 @@ class DoorOpeningServer(object):
             return False, "busy with another door request"
         self._active = server
         self._start_request(goal)
+        self._mask_leaf(goal, True)
         try:
             return (True, run() or done)
         except OpeningFailed as error:
@@ -232,8 +238,27 @@ class DoorOpeningServer(object):
             rospy.logerr("[DoorOpening] %s", error, exc_info=True)
             return False, "internal error: %s" % error
         finally:
+            self._mask_leaf(goal, False)
             self._active = None
             self._busy.release()
+
+    def _mask_leaf(self, goal, enable):
+        """Asks door_leaf_tracker to hide the moving leaf from the SLAM scans; the door request goes on without it."""
+        if not self._config["leaf_mask"]["enabled"]:
+            return
+        request = TrackDoorLeafRequest(
+            user="door_opening",
+            enable=enable,
+            hinge_pose=goal.hinge_pose,
+            handle_pose=goal.handle_pose,
+            hinge_side=goal.hinge_side,
+            push=goal.push,
+        )
+        try:
+            self._track_leaf.wait_for_service(1.0)
+            self._track_leaf(request)
+        except (rospy.ROSException, rospy.ServiceException) as error:
+            rospy.logwarn("[DoorOpening] leaf mask %s failed: %s", "on" if enable else "off", error)
 
     @staticmethod
     def _finish(server, result):
@@ -420,16 +445,9 @@ class DoorOpeningServer(object):
         self._door_angle = self._goal.door_angle
         scene = self._scenes["front"]
         self._door_seen_moved(scene)
-        side = self._grasp_config["arms"][0]
-        problem = self._problem(
-            self._base_pose(), self._offsets, Grip(side, "front"), self._home[side], False
-        )
-        steps = plan_pass(
-            problem,
-            planner_params(self._config, self._push),
-            goal_params(self._config),
-            self._config["pass"]["distances"],
-        )
+        steps = self._pass_steps(self._base_pose(), self._door_angle)
+        if steps is None:
+            steps = self._pass_after_stepping_away(scene)
         if steps is None:
             raise OpeningFailed(
                 "no way through the door with the leaf at %.0f deg" % np.degrees(self._door_angle)
@@ -438,6 +456,39 @@ class DoorOpeningServer(object):
         for segment in plan_to_segments(steps, planner["drive_ramp_s"]):
             self._stage("driving through the door")
             self._run_segment(scene, segment.trajectory, False)
+        return None
+
+    def _pass_steps(self, base_pose, door_angle):
+        """The released robot's way from base_pose through the doorway past the leaf at door_angle, or None."""
+        side = self._grasp_config["arms"][0]
+        problem = self._problem(
+            base_pose, self._offsets, Grip(side, "front"), self._home[side], False
+        )
+        return plan_pass(
+            problem._replace(start_angle=door_angle),
+            planner_params(self._config, self._push)._replace(step_cells=self._config["pass"]["step_cells"]),
+            goal_params(self._config),
+            self._config["pass"]["distances"],
+            self._push,
+        )
+
+    def _pass_after_stepping_away(self, scene):
+        """A base left within the collision margin of the leaf has no way out from where it stands: a straight step
+        away from the leaf, or back the other way, from whose end a way through is planned, comes first."""
+        side = self._grasp_config["arms"][0]
+        base = self._base_pose()
+        heading = np.array([np.cos(base[2]), np.sin(base[2])])
+        away = np.copysign(
+            self._grasp_config["standoff"],
+            heading @ toward_robot(scene, self._door_angle, base[:2]),
+        )
+        for distance in (away, -away):
+            drive = self._clear_straight_drive(scene, side, base, distance)
+            if drive is None or self._pass_steps(drive.base_poses[-1], self._door_angle) is None:
+                continue
+            self._stage("stepping the base away from the leaf")
+            self._run_segment(scene, drive, False)
+            return self._pass_steps(self._base_pose(), self._door_angle)
         return None
 
     def _open_with_recoveries(self, segments):
@@ -459,7 +510,7 @@ class DoorOpeningServer(object):
                 return
             except SegmentFailed as error:
                 self._door_seen_moved(self._scenes["front"])
-                if self._passable():
+                if self._wide_enough():
                     rospy.logwarn(
                         "[DoorOpening] %s; the door is open wide enough to pass", error
                     )
@@ -471,7 +522,7 @@ class DoorOpeningServer(object):
                 segments = None
 
     def _require_passable(self):
-        if not self._passable():
+        if not self._wide_enough():
             raise SegmentFailed(
                 "the plan ended with the door at %.0f deg, short of the %.0f deg to pass"
                 % (np.degrees(self._door_angle), np.degrees(self._passable_angle))
@@ -483,13 +534,38 @@ class DoorOpeningServer(object):
             raise DoorOpen()
 
     def _passable(self):
-        """A door angle the laser fit gave against the hand must clear the passable angle by the fit's error."""
+        return self._sure_door_angle() >= self._passable_angle
+
+    def _sure_door_angle(self):
+        """A door angle the laser fit gave against the hand counts less the fit's error."""
         margin = (
             np.radians(self._config["scan"]["fit_error_deg"])
             if self._laser_decided
             else 0.0
         )
-        return self._door_angle - margin >= self._passable_angle
+        return self._door_angle - margin
+
+    def _wide_enough(self):
+        """At the passable angle, or short of it with a way through the doorway planned: the goal is the doorway's
+        passable angle rounded up to the planner's step plus a margin, which a door a few degrees short may not need.
+        Below the doorway's own passable angle no way through is looked for."""
+        if self._passable():
+            return True
+        angle = self._sure_door_angle()
+        goal = goal_params(self._config)
+        needed = passable_angle(self._scenes["front"], goal.pass_width, goal.handle_depth, PASSABLE_ANGLE_STEP)
+        if needed is None or angle < needed:
+            return False
+        self._grid = self._costmap()
+        if self._pass_steps(self._base_pose(), angle) is None:
+            rospy.loginfo("[DoorOpening] no way through the door planned at %.0f deg", np.degrees(angle))
+            return False
+        rospy.loginfo(
+            "[DoorOpening] door at %.0f deg, short of %.0f deg, but a way through is planned",
+            np.degrees(angle),
+            np.degrees(self._passable_angle),
+        )
+        return True
 
     # Planning
 
@@ -671,6 +747,11 @@ class DoorOpeningServer(object):
                     self._stop_if_passable()
                     segments = self._replan_released([segment] + segments)
                     continue
+                if not segments:
+                    raise SegmentFailed(
+                        "the plan drives on without a grasp, the door at %.0f deg"
+                        % np.degrees(self._door_angle)
+                    )
                 self._drive_released(self._scenes["front"], segment.trajectory)
                 segments = self._regrasp_and_replan(segments)
                 holding_from_plan = True

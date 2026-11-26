@@ -29,6 +29,13 @@ Publishes:
 - `ekf`: wheels + visual odometry + IMU fused by `robot_localization` (previous setup).
 - `wheel`: wheel odometry from `/tf`.
 
+`icp_odometry` never resets itself (`Odom/ResetCountdown 0`): a reset hands rtabmap a high-variance pose, which
+starts a new map session and makes `map` jump until a loop closure joins the sessions.
+
+`mask_door` arg (default true): the SLAM reads `/slam/scan`, `/scan` without the returns inside `/door_leaf/polygon`
+(`scan_door_mask.py`; the door leaf `tiago_door_planning`'s `door_leaf_tracker.py` tracks while the door is worked
+on), since a leaf moving next to the robot drags scan matching along with it.
+
 ### Common commands
 
 ```bash

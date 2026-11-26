@@ -205,6 +205,16 @@ def test_released_step_drives_the_base_and_leaves_the_arm_still():
     assert command.door_angle == trajectory.door_angles[0]
 
 
+def test_released_drive_ends_only_with_the_base_at_its_end():
+    trajectory = make_trajectory()
+    end = trajectory.base_poses[-1]
+    near = Measurement(end + [0.1, 0.0, 0.0], np.zeros(3), np.eye(4), np.eye(6, 3))
+    stuck = Measurement(end + [0.5, 0.0, 0.0], np.zeros(3), np.eye(4), np.eye(6, 3))
+
+    assert base_tracking_step(trajectory, 2.0, near, GAINS, 0.02).status == DONE
+    assert base_tracking_step(trajectory, 2.0, stuck, GAINS, 0.02).status != DONE
+
+
 def test_door_seen_past_the_end_finishes_the_segment():
     scene = make_scene()
     trajectory = make_trajectory()

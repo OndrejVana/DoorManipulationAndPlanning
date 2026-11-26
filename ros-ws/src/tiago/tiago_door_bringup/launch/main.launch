@@ -3,6 +3,7 @@
   <!-- Global Configuration -->
   <arg name="simulation" default="false" doc="true = Gazebo sim, false = real robot"/>
   <arg name="use_slam" default="true" doc="Enable SLAM for mapping and localization"/>
+  <arg name="slam_mask_door" default="true" doc="Leave the door leaf, while door_leaf_tracker tracks it, out of the SLAM's laser scan"/>
   <arg name="use_door_perception" default="true" doc="Enable AprilTag-based door detection"/>
   <arg name="use_navigation" default="true" doc="move_base with the door-masked costmap open_door plans on"/>
   <arg name="use_door_planning" default="true" doc="open_door / pass_door / execute_door_segment servers"/>
@@ -56,7 +57,9 @@
       <node name="kill_pal_nav_nodes" pkg="tiago_slam" type="kill_pal_nav_nodes.py"
             output="screen"/>
     </group>
-    <include file="$(find tiago_slam)/launch/tiago_slam.launch"/>
+    <include file="$(find tiago_slam)/launch/tiago_slam.launch">
+      <arg name="mask_door" value="$(arg slam_mask_door)"/>
+    </include>
   </group>
 
   <!-- 3. Door Perception -->

@@ -49,6 +49,8 @@ mask:
   max_angle_deg: 100.0
   margin: 0.15
   settle_s: 1.0
+  # Door leaf tracked and hidden from the SLAM
+  slam_leaf: true
 
 costmap_topic: /tiago_move_base/move_base/global_costmap/costmap
 costmap_wait_s: 5.0

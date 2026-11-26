@@ -1,0 +1,9 @@
+# Track the door leaf with the laser and hide it from the SLAM
+string user
+bool enable
+geometry_msgs/PoseStamped hinge_pose
+geometry_msgs/PoseStamped handle_pose
+string hinge_side
+bool push
+---
+string message

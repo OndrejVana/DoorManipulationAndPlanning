@@ -14,6 +14,7 @@ from tiago_door_planning.sensing.door_sensing import (
     grasp_lost,
     ray_entries,
     scan_points,
+    tracked_door_angle,
 )
 from tiago_door_planning.model.geometry import Box, make_pose
 
@@ -75,6 +76,42 @@ def test_angles_below_the_known_door_angle_are_not_candidates():
 
     assert np.degrees(door_angle_from_points(scene, points, PARAMS)) == pytest.approx(0.0, abs=1.0)
     assert door_angle_from_points(scene, points, PARAMS, np.radians(60.0)) is None
+
+
+def leaf_and_walls(degrees):
+    scene = make_scene()
+    leaf = face_points(door_box(scene, np.radians(degrees)), 60, 1.0)
+    return scene, np.vstack([leaf] + [face_points(box, 40, 1.0) for box in wall_boxes(scene)])
+
+
+def test_tracking_follows_the_leaf_within_the_window_either_way():
+    scene, points = leaf_and_walls(50.0)
+    window = np.radians(15.0)
+
+    for previous in (40.0, 60.0):
+        angle = tracked_door_angle(scene, points, PARAMS, [np.radians(previous)], window)
+
+        assert np.degrees(angle) == pytest.approx(50.0, abs=1.0)
+
+
+def test_tracking_does_not_jump_to_a_leaf_beyond_the_window():
+    scene, points = leaf_and_walls(70.0)
+
+    assert tracked_door_angle(scene, points, PARAMS, [np.radians(20.0)], np.radians(15.0)) is None
+
+
+def test_tracking_reaches_the_angle_a_segment_moves_the_door_to():
+    scene, points = leaf_and_walls(70.0)
+
+    angle = tracked_door_angle(scene, points, PARAMS, [np.radians(20.0), np.radians(65.0)], np.radians(15.0))
+
+    assert np.degrees(angle) == pytest.approx(70.0, abs=1.0)
+
+
+def test_tracking_starts_over_the_whole_range():
+    scene, points = leaf_and_walls(35.0)
+
+    assert np.degrees(tracked_door_angle(scene, points, PARAMS, [], np.radians(15.0))) == pytest.approx(35.0, abs=1.0)
 
 
 def ring_walls():

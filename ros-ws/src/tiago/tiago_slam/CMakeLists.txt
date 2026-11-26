@@ -134,6 +134,7 @@ catkin_install_python(
     scripts/tf_filter.py
     scripts/imu_fix.py
     scripts/slam_bridge.py
+    scripts/scan_door_mask.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

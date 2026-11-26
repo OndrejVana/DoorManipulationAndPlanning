@@ -168,6 +168,14 @@ scan:
   max_rays_through: 3
   fit_error_deg: 3.0
 
+# Door leaf hidden from the SLAM scans
+leaf_mask:
+  enabled: true
+  window_deg: 15.0  # the fit looks this far around the tracked angle and a running segment's planned one
+  margin: 0.15
+  angle_margin_deg: 10.0  # the laser fit of a pulled leaf the robot stands next to can be this far off
+  hint_max_age_s: 0.5
+
 force:
   topic: "/wrist_{side}_ft/corrected"
   wait_timeout_s: 5.0
@@ -182,10 +190,13 @@ force:
   compliance: 0.002
   max_offset: 0.04
   offset_leak_s: 5.0
+  vertical_compliance: [push] # The vertical compliance is only used when pushing the door.
 
 # Driving through after the opening: the first of these distances (m) past the doorway the robot can reach.
 pass:
   distances: [1.0, 0.75, 0.5]
+  # Lattice step (cells) of the pass plan
+  step_cells: 2
 
 # Read afresh for every plan; it must be in the frame of the door poses.
 costmap:

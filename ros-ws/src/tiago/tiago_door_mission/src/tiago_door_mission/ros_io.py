@@ -14,12 +14,19 @@ from nav_msgs.msg import OccupancyGrid
 from play_motion_msgs.msg import PlayMotionAction, PlayMotionGoal
 from std_msgs.msg import Bool, Int32, String
 
-from tiago_door_planning.model.door_scene import scene_from_door_poses, swing_polygon
+from tiago_door_planning.model.door_scene import scene_from_door_poses, swept_polygon
 from tiago_door_planning.model.geometry import rotation_to_quaternion
 from tiago_door_planning.msg import OpenDoorAction, OpenDoorGoal, PassDoorAction, PassDoorGoal
 from tiago_door_planning.ros.config import door_dimensions
 from tiago_door_planning.ros.ros_conversions import pose_msg_to_matrix
-from tiago_door_planning.srv import MeasureDoor, MeasureDoorRequest, PlanApproach, PlanApproachRequest
+from tiago_door_planning.srv import (
+    MeasureDoor,
+    MeasureDoorRequest,
+    PlanApproach,
+    PlanApproachRequest,
+    TrackDoorLeaf,
+    TrackDoorLeafRequest,
+)
 
 from .door_lock import DoorSample
 
@@ -129,6 +136,7 @@ class RosMissionIO(object):
         self._head = actionlib.SimpleActionClient("/head_controller/point_head_action", PointHeadAction)
         self._plan_approach = rospy.ServiceProxy("plan_approach", PlanApproach)
         self._measure_door = rospy.ServiceProxy("measure_door", MeasureDoor)
+        self._track_leaf = rospy.ServiceProxy("track_door_leaf", TrackDoorLeaf)
 
     # Run control
 
@@ -160,7 +168,10 @@ class RosMissionIO(object):
         for name, client in clients:
             if not client.wait_for_server(rospy.Duration(SERVER_WAIT_S)):
                 missing.append(name)
-        for name, proxy in (("plan_approach", self._plan_approach), ("measure_door", self._measure_door)):
+        services = [("plan_approach", self._plan_approach), ("measure_door", self._measure_door)]
+        if self._params["mask"]["slam_leaf"]:
+            services.append(("track_door_leaf", self._track_leaf))
+        for name, proxy in services:
             try:
                 proxy.wait_for_service(SERVER_WAIT_S)
             except rospy.ROSException:
@@ -235,11 +246,24 @@ class RosMissionIO(object):
             polygon.header.stamp = rospy.Time.now()
             polygon.polygon.points = [
                 Point32(x, y, 0.0)
-                for x, y in swing_polygon(scene, np.radians(mask["max_angle_deg"]), mask["margin"])
+                for x, y in swept_polygon(scene, 0.0, np.radians(mask["max_angle_deg"]), mask["margin"])
             ]
             self._mask_polygon.publish(polygon)
         self._mask_enabled.publish(Bool(data=door is not None))
+        if self._params["mask"]["slam_leaf"]:
+            self._mask_leaf(door)
         self._wait_for_costmap_after(rospy.Time.now() + rospy.Duration(self._params["mask"]["settle_s"]))
+
+    def _mask_leaf(self, door):
+        """door_leaf_tracker hides the leaf from the SLAM scans until the mask is turned off; the mission goes on
+        without it."""
+        request = TrackDoorLeafRequest(user="mission", enable=door is not None)
+        if door is not None:
+            fill_door(request, door)
+        try:
+            self._track_leaf(request)
+        except rospy.ServiceException as error:
+            rospy.logwarn("[DoorMission] leaf mask failed: %s", error)
 
     def _wait_for_costmap_after(self, stamp):
         """The costmap applies the mask on its next update and publishes it at its own rate; a plan read from a

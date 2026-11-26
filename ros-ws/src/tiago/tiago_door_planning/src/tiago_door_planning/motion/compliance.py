@@ -5,7 +5,7 @@ import numpy as np
 from ..model.door_scene import door_yaw
 
 ComplianceParams = collections.namedtuple(
-    "ComplianceParams", "deadband compliance max_offset offset_leak_s"
+    "ComplianceParams", "deadband compliance max_offset offset_leak_s vertical"
 )
 
 RADIAL, TANGENTIAL, VERTICAL = 0, 1, 2
@@ -25,11 +25,14 @@ def deadband(values, width):
 
 
 def admittance_step(offset, door_force, dt, params):
-    """Offset (radial, tangential, vertical) after dt: it moves along the force beyond the deadband, leaks back to
-    zero, never reaches along the door's motion and is clipped to max_offset per axis."""
+    """Offset (radial, tangential, vertical) after dt: it moves with the force beyond the deadband, leaks back to zero
+    and is clipped to max_offset. It never reaches along the door's motion, and up or down only with params.vertical:
+    a pull hook the bar stops vertically never relaxes the force and the offset only slides it off."""
     rate = params.compliance * deadband(door_force, params.deadband)
     rate -= np.asarray(offset) / params.offset_leak_s
     rate[TANGENTIAL] = 0.0
+    if not params.vertical:
+        rate[VERTICAL] = 0.0
     return np.clip(offset + rate * dt, -params.max_offset, params.max_offset)
 
 

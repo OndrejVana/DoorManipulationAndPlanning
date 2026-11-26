@@ -4661,7 +4661,8 @@
         <child>frame</child>
       </joint>
       <link name='door_panel'>
-        <pose frame=''>0 0 1 0 -0 0</pose>
+        <!-- 1 cm above the floor: a leaf dragging on it sticks and slips -->
+        <pose frame=''>0 0 1.01 0 -0 0</pose>
         <visual name='door_visual'>
           <pose frame=''>0.45 0 0 0 -0 0</pose>
           <geometry>
@@ -4724,7 +4725,8 @@
           </limit>
           <dynamics>
             <damping>0.05</damping>
-            <friction>0</friction>
+            <!-- Nm, an interior door without a closer: a pushed leaf stops when the hand stops -->
+            <friction>1.5</friction>
             <spring_reference>0</spring_reference>
             <spring_stiffness>0</spring_stiffness>
           </dynamics>
@@ -9517,7 +9519,8 @@
         <child>frame</child>
       </joint>
       <link name='door_panel'>
-        <pose frame=''>0 0 1 0 -0 0</pose>
+        <!-- 1 cm above the floor: a leaf dragging on it sticks and slips -->
+        <pose frame=''>0 0 1.01 0 -0 0</pose>
         <visual name='door_visual'>
           <pose frame=''>-0.45 0 0 0 -0 0</pose>
           <geometry>
@@ -9580,7 +9583,8 @@
           </limit>
           <dynamics>
             <damping>0.05</damping>
-            <friction>0</friction>
+            <!-- Nm, an interior door without a closer: a pushed leaf stops when the hand stops -->
+            <friction>1.5</friction>
             <spring_reference>0</spring_reference>
             <spring_stiffness>0</spring_stiffness>
           </dynamics>

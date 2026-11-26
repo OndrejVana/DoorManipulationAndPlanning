@@ -36,10 +36,10 @@ any failure -> SAFE_STOP (cancel goals, mask off) -> failed;   ~stop -> ABORT ->
 | GO_TO_VIEW | move_base to the first reachable of `view/distances` in front of the handle, facing it; skipped when the robot already stands within `view/max_distance` and `view/max_angle_deg` of the tag's normal | no viewing pose reached |
 | LOCK_VIEW | locks again to the stricter `lock/near` spreads; the approach and the opening plan on this lock | samples keep disagreeing, or the tag is out of view |
 | CHECK_CLOSED | `measure_door` (laser fit of the leaf) | leaf seen open over `closed_tolerance_deg/far` (an unseen leaf passes here) |
-| MASK_ON | publishes the swing sector polygon, enables `DoorMaskLayer` on the global costmap | - |
+| MASK_ON | publishes the swing sector polygon, enables `DoorMaskLayer` on the global costmap; with `mask/slam_leaf` also asks `track_door_leaf` to hide the leaf from the SLAM's scan | - |
 | PLAN_APPROACH | `plan_approach`: grasp spots for the closed door from which the whole opening plans, fewest grasps then shortest first | none |
 | NAVIGATE | move_base to the first `approach_attempts` poses in turn | all fail |
-| REFINE_DOOR | locks the door again from close by to the stricter `lock/near` spreads (the map drifts while driving), up to `lock/attempts` times; keeps the earlier lock only when the tag is out of view | samples keep disagreeing |
+| REFINE_DOOR | locks the door again from close by to the stricter `lock/near` spreads (the map drifts while driving), up to `lock/attempts` times; keeps the earlier lock only when the tag is out of view; the masks follow a new lock | samples keep disagreeing |
 | CHECK_CLOSED_NEAR | as CHECK_CLOSED, to `closed_tolerance_deg/near`, and the leaf must be seen | leaf open or unseen |
 | OPEN_DOOR | `open_door` with `release_at_end` (ends released, arm parked) | after `open_attempts` attempts |
 | PASS_DOOR | `pass_door`: planned base path through the gap, executed by the tracker | no path, or tracking fails |

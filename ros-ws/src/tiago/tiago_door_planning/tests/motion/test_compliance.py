@@ -13,7 +13,7 @@ from tiago_door_planning.motion.compliance import (
     offset_in_world,
 )
 
-PARAMS = ComplianceParams(3.0, 0.002, 0.04, 5.0)
+PARAMS = ComplianceParams(3.0, 0.002, 0.04, 5.0, False)
 
 
 def scene(push=True):
@@ -32,27 +32,35 @@ def test_offset_moves_along_the_force_beyond_the_deadband():
 
     offset = admittance_step(np.zeros(3), force, 0.1, PARAMS)
 
-    assert np.allclose(offset, [0.0024, 0.0, -0.0012])
+    assert np.allclose(offset, [0.0024, 0.0, 0.0])
 
 
-def test_offset_never_moves_along_the_door_motion():
-    offset = admittance_step(np.zeros(3), np.array([0.0, 30.0, 0.0]), 1.0, PARAMS)
+def test_offset_moves_vertically_only_when_asked():
+    force = np.array([0.0, 0.0, -9.0])
+
+    assert admittance_step(np.zeros(3), force, 0.1, PARAMS)[VERTICAL] == 0.0
+    assert np.isclose(admittance_step(np.zeros(3), force, 0.1, PARAMS._replace(vertical=True))[VERTICAL], -0.0012)
+
+
+def test_offset_never_moves_along_the_door_motion_nor_vertically():
+    offset = admittance_step(np.zeros(3), np.array([0.0, 30.0, -30.0]), 1.0, PARAMS)
 
     assert offset[TANGENTIAL] == 0.0
+    assert offset[VERTICAL] == 0.0
 
 
 def test_offset_is_clipped_per_axis():
     offset = np.zeros(3)
     for _ in range(100):
-        offset = admittance_step(offset, np.array([50.0, 0.0, -50.0]), 0.1, PARAMS)
+        offset = admittance_step(offset, np.array([-50.0, 0.0, 0.0]), 0.1, PARAMS)
 
-    assert np.allclose(offset[[RADIAL, VERTICAL]], [0.04, -0.04])
+    assert np.isclose(offset[RADIAL], -0.04)
 
 
 def test_offset_leaks_back_without_force():
-    offset = admittance_step(np.array([0.02, 0.0, -0.01]), np.zeros(3), 0.5, PARAMS)
+    offset = admittance_step(np.array([0.02, 0.0, 0.0]), np.zeros(3), 0.5, PARAMS)
 
-    assert np.allclose(offset, [0.018, 0.0, -0.009])
+    assert np.allclose(offset, [0.018, 0.0, 0.0])
 
 
 def test_door_axes_follow_the_leaf_and_the_opening_direction():

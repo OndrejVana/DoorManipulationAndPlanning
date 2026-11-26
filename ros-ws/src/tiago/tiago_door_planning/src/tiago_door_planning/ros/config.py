@@ -56,8 +56,9 @@ def force_params(config):
     return section_params(ForceParams, config["force"])
 
 
-def compliance_params(config):
-    return section_params(ComplianceParams, config["force"])
+def compliance_params(config, grasp_action):
+    force = config["force"]
+    return section_params(ComplianceParams, force, vertical=grasp_action in force["vertical_compliance"])
 
 
 def pipeline_rate(today, fast, speed):

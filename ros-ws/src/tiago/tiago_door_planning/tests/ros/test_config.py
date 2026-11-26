@@ -32,7 +32,9 @@ def test_shipped_config_builds_all_parameter_sets():
     assert collision_params(config).base_radius > 0.0
     assert scan_params(config).max_angle > 0.0
     assert "{side}" in force_params(config).topic
-    assert compliance_params(config).max_offset > 0.0
+    assert compliance_params(config, "pull").max_offset > 0.0
+    assert compliance_params(config, "push").vertical
+    assert not compliance_params(config, "pull").vertical
     for action in ("pull", "push"):
         assert np.allclose(grasp_rotation(config, action) @ grasp_rotation(config, action).T, np.eye(3))
 
@@ -117,7 +119,7 @@ def test_a_missing_compliance_key_fails_loudly():
     del config["force"]["max_offset"]
 
     with pytest.raises(TypeError):
-        compliance_params(config)
+        compliance_params(config, "pull")
 
 
 def test_the_back_handle_takes_its_own_push_offset():

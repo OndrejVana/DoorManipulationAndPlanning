@@ -7,6 +7,8 @@
   <arg name="rgb_camera_info_topic"   default="/xtion/rgb/camera_info"/>
 
   <arg name="scan_topic"  default="/scan" doc="2D scan rtabmap refines links with (ICP): base laser"/>
+  <arg name="mask_door"   default="true" doc="Leave the door leaf, while door_leaf_tracker (tiago_door_planning) tracks it, out of the SLAM's scan"/>
+  <arg name="slam_scan"   value="$(eval '/slam/scan' if arg('mask_door') else arg('scan_topic'))"/>
   <arg name="base_frame"  default="base_footprint"/>
   <arg name="odom_frame"  default="odom"/>
   <arg name="map_frame"   default="map"/>
@@ -73,6 +75,12 @@
     </node>
   </group>
 
+  <node if="$(arg mask_door)" name="scan_door_mask" pkg="tiago_slam" type="scan_door_mask.py">
+    <remap from="scan_in"  to="$(arg scan_topic)"/>
+    <remap from="scan_out" to="$(arg slam_scan)"/>
+    <remap from="polygon"  to="/door_leaf/polygon"/>
+  </node>
+
   <node name="kill_head_nodes" pkg="tiago_slam" type="kill_head_nodes.py" output="screen"/>
 
   <node unless="$(arg icp)" name="rgbd_odometry" pkg="rtabmap_ros" type="rgbd_odometry" output="screen">
@@ -123,7 +131,7 @@
     <remap from="depth/image"     to="$(arg depth)"/>
     <remap from="rgb/camera_info" to="$(arg rgb_info)"/>
     <remap from="odom"            to="$(eval '/slam/odometry' if arg('ekf') else '/rgbd_odometry/odom')"/>
-    <remap from="scan"            to="$(arg scan_topic)"/>
+    <remap from="scan"            to="$(arg slam_scan)"/>
     <remap from="grid_map"        to="/map"/>
 
     <param name="subscribe_imu"            value="$(eval not arg('ekf'))"/>
@@ -162,7 +170,7 @@
 <!-- ICP Odometry -->
   <group if="$(arg icp)">
     <node name="icp_odometry" pkg="rtabmap_ros" type="icp_odometry" output="screen">
-      <remap from="scan" to="$(arg scan_topic)"/>
+      <remap from="scan" to="$(arg slam_scan)"/>
       <remap from="odom" to="/odom_icp"/>
       <remap from="/tf"        to="$(arg slam_tf)"/>
       <remap from="/tf_static" to="$(arg slam_tf)_static"/>
@@ -174,7 +182,9 @@
       <param name="Reg/Force3DoF"  value="true"/>
       <param name="Odom/Strategy"  value="0"/>
       <param name="Odom/Holonomic" value="false"/>
-      <param name="Odom/ResetCountdown"  value="1"/>
+      <!-- Never reset: a reset hands rtabmap a high-variance pose, which starts a new map session and jumps map by
+           up to metres until a loop closure joins them; one failed match is bridged by the wheel guess instead -->
+      <param name="Odom/ResetCountdown"  value="0"/>
       <param name="Odom/ScanKeyFrameThr" value="0.7"/>
       <param name="OdomF2M/ScanMaxSize"        value="3000"/>
       <param name="OdomF2M/ScanSubtractRadius" value="0.02"/>
@@ -204,7 +214,7 @@
       <remap from="rgb/image"       to="$(arg rgb)"/>
       <remap from="depth/image"     to="$(arg depth)"/>
       <remap from="rgb/camera_info" to="$(arg rgb_info)"/>
-      <remap from="scan"            to="$(arg scan_topic)"/>
+      <remap from="scan"            to="$(arg slam_scan)"/>
       <remap from="odom"            to="/odom_icp"/>
       <remap from="grid_map"        to="/map"/>
       <param name="publish_tf"      value="true"/>

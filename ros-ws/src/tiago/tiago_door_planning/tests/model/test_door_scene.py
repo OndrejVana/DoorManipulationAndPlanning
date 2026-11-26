@@ -11,7 +11,7 @@ from tiago_door_planning.model.door_scene import (
     handle_pose,
     opening_sign,
     scene_from_door_poses,
-    swing_polygon,
+    swept_polygon,
     wall_boxes,
 )
 from tiago_door_planning.model.geometry import make_pose, points_to_box_distances
@@ -127,7 +127,7 @@ def _inside(polygon, point):
 @pytest.mark.parametrize("push, hinge_side", [(True, "left"), (True, "right"), (False, "left"), (False, "right")])
 def test_swing_polygon_covers_the_leaf_at_every_angle(push, hinge_side):
     scene = make_scene(push, hinge_side)
-    polygon = swing_polygon(scene, np.radians(100.0), 0.1)
+    polygon = swept_polygon(scene, 0.0, np.radians(100.0), 0.1)
 
     for angle in np.radians([0.0, 30.0, 60.0, 90.0, 100.0]):
         box = door_box(scene, angle)
@@ -139,7 +139,7 @@ def test_swing_polygon_covers_the_leaf_at_every_angle(push, hinge_side):
 
 def test_swing_polygon_leaves_the_other_side_of_the_wall_free():
     scene = make_scene(push=True)
-    polygon = swing_polygon(scene, np.radians(100.0), 0.1)
+    polygon = swept_polygon(scene, 0.0, np.radians(100.0), 0.1)
     middle = handle_pose(scene, 0.0)[:2, 3] - 0.3 * (scene.handle_closed[:2, 3] - scene.hinge[:2])
 
     swing_side = handle_pose(scene, np.radians(60.0))[:2, 3]
@@ -147,3 +147,21 @@ def test_swing_polygon_leaves_the_other_side_of_the_wall_free():
 
     assert _inside(polygon, swing_side)
     assert not _inside(polygon, other_side)
+
+
+def _leaf_corners(scene, angle, grow=0.0):
+    box = door_box(scene, angle)
+    signs = [(x, y) for x in (-1.0, 1.0) for y in (-1.0, 1.0)]
+    half = box.half_extents + [grow, grow, 0.0]
+    return [(box.pose[:3, :3] @ (half * [x, y, 0.0]) + box.pose[:3, 3])[:2] for x, y in signs]
+
+
+@pytest.mark.parametrize("push, hinge_side", [(True, "left"), (False, "right")])
+def test_a_narrow_swept_polygon_covers_the_leaf_with_a_margin_and_not_the_leaf_further_away(push, hinge_side):
+    scene = make_scene(push, hinge_side)
+    polygon = swept_polygon(scene, np.radians(40.0), np.radians(45.0), 0.15)
+
+    for angle in np.radians([40.0, 45.0]):
+        assert all(_inside(polygon, corner) for corner in _leaf_corners(scene, angle, 0.1))
+    for angle in np.radians([10.0, 75.0]):
+        assert not any(_inside(polygon, corner) for corner in _leaf_corners(scene, angle)[2:])

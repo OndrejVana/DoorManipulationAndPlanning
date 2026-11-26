@@ -125,19 +125,23 @@ def wall_boxes(scene):
     return [hinge_side, latch_side]
 
 
-def swing_polygon(scene, max_angle, margin, arc_points=12):
-    """(N, 2) polygon around everywhere the leaf can be between closed and max_angle, grown by margin: the swept
-    sector plus the closed leaf's thickness on the side it does not swing to."""
+def swept_polygon(scene, min_angle, max_angle, margin, arc_points=12):
+    """(N, 2) polygon around everywhere the leaf can be between min_angle and max_angle, grown by margin: the swept
+    sector plus the leaf's thickness at min_angle on the side it does not swing to."""
     dims = scene.dimensions
-    _, along, away = _door_axes(scene, 0.0)
+    _, along, away = _door_axes(scene, min_angle)
     radius = dims.width + margin
     behind = away * (dims.thickness + margin)
     hinge = scene.hinge
     corners = [hinge - along * margin + behind, hinge + along * radius + behind]
     arc = [
         hinge + _door_axes(scene, angle)[1] * radius
-        for angle in np.linspace(0.0, max_angle, arc_points)
+        for angle in np.linspace(min_angle, max_angle, arc_points)
     ]
     _, last_along, last_away = _door_axes(scene, max_angle)
-    closing = [hinge - last_away * margin, hinge - last_along * margin - last_away * margin]
+    closing = [
+        hinge + last_along * radius - last_away * margin,
+        hinge - last_away * margin,
+        hinge - last_along * margin - last_away * margin,
+    ]
     return np.array([point[:2] for point in corners + arc + closing])

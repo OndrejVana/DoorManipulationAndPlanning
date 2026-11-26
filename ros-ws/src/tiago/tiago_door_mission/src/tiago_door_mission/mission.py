@@ -159,6 +159,7 @@ class Mission(object):
         a tag out of view keeps the earlier lock."""
         previous = userdata.door
         if self._lock(userdata, self.params.lock_near, "REFINE_DOOR") == "ok":
+            self.io.set_mask(userdata.door)  # the masks follow the refined door
             return "ok"
         if "not seen" in userdata.message:
             self.io.report("REFINE_DOOR", "tag out of view; keeping the earlier lock")

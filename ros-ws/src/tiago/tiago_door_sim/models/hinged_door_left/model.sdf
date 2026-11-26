@@ -41,7 +41,8 @@
     <!-- Door panel            -->
     <!-- ===================== -->
     <link name="door_panel">
-      <pose>0 0 1.0 0 0 0</pose>
+      <!-- 1 cm above the floor: a leaf dragging on it sticks and slips -->
+      <pose>0 0 1.01 0 0 0</pose>
 
       <visual name="door_visual">
         <pose>-0.45 0 0 0 0 0</pose>
@@ -93,7 +94,8 @@
         </limit>
         <dynamics>
           <damping>0.05</damping>
-          <friction>0.0</friction>
+          <!-- Nm, an interior door without a closer: a pushed leaf stops when the hand stops -->
+          <friction>1.5</friction>
         </dynamics>
       </axis>
     </joint>

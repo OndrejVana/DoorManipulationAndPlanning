@@ -284,13 +284,15 @@ def tracking_step(
 
 
 def base_tracking_step(trajectory, progress, measurement, gains, dt):
-    """Released hand: the base follows its reference alone and the door stays where it was left."""
+    """Released hand: the base follows its reference alone and the door stays where it was left. The drive is done
+    only once the base stands near the end of its path, not when the reference got there without it."""
     reference = reference_at(trajectory, progress)
     base_error = base_distance(reference, measurement)
     rate = base_rate(base_error, gains)
     linear, angular = base_command(reference, measurement.base_pose, rate, gains)
     progress = next_progress(trajectory, progress, rate, dt)
-    status = DONE if progress >= last_progress(trajectory) else OK
+    at_end = progress >= last_progress(trajectory) and base_error <= gains.base_error_stop
+    status = DONE if at_end else OK
     return TrackingCommand(
         linear,
         angular,

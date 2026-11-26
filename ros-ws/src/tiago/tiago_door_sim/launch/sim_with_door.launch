@@ -136,8 +136,12 @@
     </group>
   </group>
 
-  <!-- The robot's laser filter chain makes /scan out of /scan_raw; the sim has none, and SLAM and move_base read /scan -->
-  <node name="scan_relay" pkg="topic_tools" type="relay" args="/scan_raw /scan"/>
+  <!-- The robot's laser filter chain makes /scan out of /scan_raw; SLAM and move_base read /scan -->
+  <node name="scan_filter" pkg="laser_filters" type="scan_to_scan_filter_chain">
+    <rosparam command="load" file="$(find tiago_door_sim)/config/scan_filter.yaml"/>
+    <remap from="scan" to="/scan_raw"/>
+    <remap from="scan_filtered" to="/scan"/>
+  </node>
 
   <!-- Keep consistent with tiago_gazebo.launch -->
   <node name="image_proc" pkg="image_proc" type="image_proc" ns="xtion/rgb"/>

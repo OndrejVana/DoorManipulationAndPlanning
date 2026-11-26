@@ -1,0 +1,15 @@
+# To match the behavior of the real Tiago robot's laser scanner.
+scan_filter_chain:
+  - name: field_of_view
+    type: laser_filters/LaserScanAngularBoundsFilter
+    params:
+      lower_angle: -1.66
+      upper_angle: 1.66
+  - name: range
+    type: laser_filters/LaserScanRangeFilter
+    params:
+      use_message_range_limits: false
+      lower_threshold: 0.05
+      upper_threshold: 10.0
+      lower_replacement_value: .inf
+      upper_replacement_value: .inf

@@ -6,7 +6,7 @@ from tiago_door_planning.model.geometry import points_to_boxes_distances
 from tiago_door_planning.planning.door_goal import clear_opening
 from tiago_door_planning.planning.pass_plan import pass_target, plan_pass
 
-from .test_opening_plan import COLLISION, GOAL, PARAMS, make_problem, push_scene
+from .test_opening_plan import COLLISION, GOAL, PARAMS, make_problem, pull_scene, push_scene
 
 OPEN = np.radians(90.0)
 
@@ -34,20 +34,27 @@ def wall_grid(scene):
 
 def test_the_target_lies_past_the_gap_on_the_far_side():
     scene = push_scene()
-    target = pass_target(scene, OPEN, [0.0, 0.0], 1.0, GOAL.handle_depth)
+    target = pass_target(scene, OPEN, True, 1.0, GOAL.handle_depth)
 
     assert target[0] > scene.hinge[0] + 0.9
     assert np.isclose(target[2], 0.0)
+
+
+def test_a_pull_door_is_passed_away_from_its_swing():
+    scene = pull_scene()
+    target = pass_target(scene, OPEN, False, 1.0, GOAL.handle_depth)
+
+    assert target[0] > scene.hinge[0] + 0.9
 
 
 def test_the_robot_drives_through_the_open_doorway_clear_of_the_leaf():
     scene = push_scene()
     problem = pass_problem(OPEN, [0.1, -0.1, 0.0])
 
-    steps = plan_pass(problem, PARAMS, GOAL, [1.0])
+    steps = plan_pass(problem, PARAMS, GOAL, [1.0], True)
 
     assert steps is not None
-    target = pass_target(scene, OPEN, problem.start_pose[:2], 1.0, GOAL.handle_depth)
+    target = pass_target(scene, OPEN, True, 1.0, GOAL.handle_depth)
     assert np.allclose(steps[-1].poses[-1], target, atol=1e-6)
     poses = np.vstack([step.poses for step in steps])
     centers = np.column_stack([poses[:, :2], np.full(len(poses), COLLISION.base_center_height)])
@@ -60,4 +67,14 @@ def test_a_closed_door_cannot_be_passed():
     scene = push_scene()
     problem = pass_problem(0.0, [0.1, -0.1, 0.0], wall_grid(scene))
 
-    assert plan_pass(problem, PARAMS, GOAL, [1.0]) is None
+    assert plan_pass(problem, PARAMS, GOAL, [1.0], True) is None
+
+
+def test_a_robot_already_past_the_door_line_drives_on_not_back():
+    scene = push_scene()
+    problem = pass_problem(OPEN, [scene.hinge[0] + 0.1, 0.0, 0.0])
+
+    steps = plan_pass(problem, PARAMS, GOAL, [1.0], True)
+
+    assert steps is not None
+    assert steps[-1].poses[-1][0] > scene.hinge[0] + 0.9

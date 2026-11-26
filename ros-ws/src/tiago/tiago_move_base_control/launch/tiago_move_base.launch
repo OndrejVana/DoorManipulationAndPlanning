@@ -39,6 +39,7 @@
         update_frequency: 2.0
         publish_frequency: 1.0
         transform_tolerance: 5.0
+        always_send_full_costmap: true
 
         # The live rtabmap grid (/map), plus what the laser sees now. open_door plans on this costmap.
         static_map: true

@@ -7,14 +7,15 @@ ROS 1 (Melodic) package providing a Gazebo simulation environment for TIAGo door
 ```text
 tiago_door_sim/
 ├── config/
-│   ├── ft_corrected_sim.yaml  # Wrist F/T adapter: hand mass * CoM, torque bias, lever arms
-│   └── mission_start_poses.yaml  # Robot start poses with the right door in view, push and pull side
+│   ├── ft_corrected_sim.yaml  # Wrist F/T adapter: hand mass, mass * CoM, wrench bias, averaging
+│   ├── mission_start_poses.yaml  # Robot start poses with the right door in view, push and pull side
+│   └── scan_filter.yaml        # /scan_raw -> /scan crop to the real laser's field of view and range
 ├── launch/
 │   ├── sim_with_door.launch   # Main simulation launch file
 │   └── door_edit.launch       # Helper launch for editing the door world
 ├── models/                    # Custom Gazebo models (door, AprilTag plates)
 ├── scripts/
-│   ├── ft_corrected_sim.py    # Publishes /wrist_{side}_ft/corrected from the Gazebo wrist torque
+│   ├── ft_corrected_sim.py    # Publishes /wrist_{side}_ft/corrected from the Gazebo F/T joint wrench
 │   └── mission_batch.sh       # Door mission once per start pose, results to ~/.ros/mission_batch/<side>.csv
 └── worlds/
     └── small_office_with_door.world   # Gazebo world
@@ -37,8 +38,9 @@ roslaunch tiago_door_sim sim_with_door.launch gui:=false
 roslaunch tiago_door_sim sim_with_door.launch robot:=steel
 ```
 
-The launch also relays `/scan_raw` to `/scan`: on the robot PAL's laser filters make `/scan`, which SLAM and
-move_base read.
+The launch also filters `/scan_raw` into `/scan` (`config/scan_filter.yaml`), as PAL's laser filters do on the
+robot: SLAM and move_base read `/scan`. It crops the sim laser to the real one's field of view and range; the sim's
+wider one sees the robot's own base.
 
 ## Door mission batches
 

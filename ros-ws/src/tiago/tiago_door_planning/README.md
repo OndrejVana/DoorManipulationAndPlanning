@@ -57,6 +57,11 @@ All in one node (`door_opening_server.py`), one request at a time (a second one 
 `execute_door_segment` (`ExecuteDoorSegment`, `door_tracking_server.py`): one grasped or base-only segment, tracked
 closed-loop.
 
+`track_door_leaf` (`TrackDoorLeaf.srv`, `door_leaf_tracker.py`): while any user (the mission, open_door/pass_door with
+`leaf_mask/enabled`) asks for it, tracks the door angle with the laser, guided by the running segment's planned
+angle, and publishes the leaf outline (`/door_leaf/polygon`, `leaf_mask/margin` and `angle_margin_deg`) and angle
+(`/door_leaf/angle`); `tiago_slam`'s `scan_door_mask.py` leaves the outline out of the SLAM's scan.
+
 ## Parameters (`config/door_motion.yaml`)
 
 - `speed`: `pipeline_speed` in [0, 1] (0 = half speed, 0.5 = section values, 1 = fast set).
@@ -80,17 +85,19 @@ tiago_door_planning/
 │   └── ExecuteDoorSegment.action  # One segment: trajectory in, tracked closed-loop (grasped or base only)
 ├── srv/
 │   ├── PlanApproach.srv           # Base poses to grasp the closed door from
-│   └── MeasureDoor.srv            # Laser door angle
+│   ├── MeasureDoor.srv            # Laser door angle
+│   └── TrackDoorLeaf.srv          # Start/stop the leaf tracking for the SLAM scan mask, per user
 ├── config/
 │   └── door_motion.yaml           # All parameters
 ├── launch/
-│   ├── door_opening.launch        # Tracking server + opening server + plan markers
+│   ├── door_opening.launch        # Tracking server + opening server + leaf tracker + plan markers
 │   └── door_tracking.launch       # Tracking server only
 ├── rviz/
 │   └── door_opening.rviz          # Door plan markers, laser, door poses
 ├── scripts/
 │   ├── door_opening_server.py     # open_door, pass_door, plan_approach, measure_door
 │   ├── door_tracking_server.py    # execute_door_segment action server (50 Hz tracking)
+│   ├── door_leaf_tracker.py       # track_door_leaf: laser-tracked leaf outline for the SLAM scan mask
 │   ├── run_open_door.py           # Sends the perceived door to open_door and logs the result
 │   └── door_plan_viz.py           # RViz markers: walls, leaf, planned paths, stage
 ├── src/tiago_door_planning/

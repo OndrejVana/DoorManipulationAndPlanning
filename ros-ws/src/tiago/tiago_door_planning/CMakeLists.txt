@@ -27,6 +27,7 @@ add_service_files(
   FILES
     MeasureDoor.srv
     PlanApproach.srv
+    TrackDoorLeaf.srv
 )
 
 generate_messages(
@@ -49,6 +50,7 @@ catkin_install_python(PROGRAMS
   scripts/door_opening_server.py
   scripts/run_open_door.py
   scripts/door_plan_viz.py
+  scripts/door_leaf_tracker.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

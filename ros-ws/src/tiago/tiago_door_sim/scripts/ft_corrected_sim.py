@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Sim-only stand-in for PAL's wrist F/T correction node: publishes /wrist_{side}_ft/corrected, the wrench applied on
-the hand by the environment with the hand weight removed, in wrist_{side}_ft_link.
+the hand by the environment with the hand weight removed, in wrist_{side}_ft_link, torque about its origin.
+
+It reads the wrist_{side}_ft_joint wrench Gazebo publishes every physics step (see spawn_without_safety_box.py). The
+wrist chatters at the physics rate, so a single step's wrench swings by ~100 N; the mean over average_steps steps
+does not.
 """
 
 import random
@@ -14,12 +18,10 @@ BASE_FRAME = "base_footprint"
 GRAVITY = 9.81
 
 
-def hand_wrench(torque, gravity, mass_com, bias, lever_arm, sensor_offset):
-    """(force, torque about the sensor) from the joint-7 torque, all in the sensor axes: lever_arm is the grasp point
-    and sensor_offset the sensor origin, both from the joint-7 origin."""
-    external = torque - np.cross(mass_com, gravity) - bias
-    force = np.cross(external, lever_arm) / (lever_arm @ lever_arm)
-    return force, external - np.cross(sensor_offset, force)
+def hand_wrench(force, torque, gravity, mass, mass_com, force_bias, torque_bias):
+    """(force, torque) the environment applies on the hand, all in the sensor axes, from the joint wrench: the load
+    the hand puts on the sensor, its weight plus what the environment applies on it."""
+    return force - force_bias - mass * gravity, torque - torque_bias - np.cross(mass_com, gravity)
 
 
 def vector_param(name):
@@ -32,48 +34,36 @@ def as_array(vector):
 
 class CorrectedWrench(object):
     def __init__(self, side, tf_buffer):
+        self._mass = rospy.get_param("~%s/mass" % side)
         self._mass_com = vector_param(side + "/mass_com")
-        self._bias = vector_param(side + "/bias")
-        self._torque_rotation = vector_param(side + "/torque_rotation").reshape(3, 3)
-        self._lever_arm = vector_param("lever_arm")
-        self._sensor_offset = vector_param("sensor_offset")
+        self._force_bias = vector_param(side + "/force_bias")
+        self._torque_bias = vector_param(side + "/torque_bias")
+        self._average_steps = rospy.get_param("~average_steps")
         self._drop_probability = rospy.get_param("~drop_probability")
+        self._steps = []
         self._tf = tf_buffer
-        self._publisher = rospy.Publisher(
-            "/wrist_%s_ft/corrected" % side, WrenchStamped, queue_size=10
-        )
-        rospy.Subscriber(
-            "/wrist_%s_ft" % side, WrenchStamped, self._on_wrench, queue_size=10
-        )
+        self._publisher = rospy.Publisher("/wrist_%s_ft/corrected" % side, WrenchStamped, queue_size=10)
+        rospy.Subscriber("/wrist_%s_ft/joint_wrench" % side, WrenchStamped, self._on_wrench, queue_size=100)
 
     def _gravity_in(self, frame):
-        rotation = self._tf.lookup_transform(
-            frame, BASE_FRAME, rospy.Time(0)
-        ).transform.rotation
+        rotation = self._tf.lookup_transform(frame, BASE_FRAME, rospy.Time(0)).transform.rotation
         x, y, z, w = rotation.x, rotation.y, rotation.z, rotation.w
         # gravity is -z in base_footprint; rotate it into the sensor frame
-        return -GRAVITY * np.array(
-            [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)]
-        )
+        return -GRAVITY * np.array([2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)])
 
     def _on_wrench(self, msg):
+        self._steps.append(np.concatenate([as_array(msg.wrench.force), as_array(msg.wrench.torque)]))
+        if len(self._steps) < self._average_steps:
+            return
+        mean, self._steps = np.mean(self._steps, axis=0), []
         if random.random() < self._drop_probability:
             return
         try:
             gravity = self._gravity_in(msg.header.frame_id)
-        except (
-            tf2_ros.LookupException,
-            tf2_ros.ExtrapolationException,
-            tf2_ros.ConnectivityException,
-        ):
+        except (tf2_ros.LookupException, tf2_ros.ExtrapolationException, tf2_ros.ConnectivityException):
             return
         force, torque = hand_wrench(
-            self._torque_rotation @ as_array(msg.wrench.torque),
-            gravity,
-            self._mass_com,
-            self._bias,
-            self._lever_arm,
-            self._sensor_offset,
+            mean[:3], mean[3:], gravity, self._mass, self._mass_com, self._force_bias, self._torque_bias
         )
         out = WrenchStamped()
         out.header = msg.header
@@ -87,9 +77,7 @@ def main():
     tf_buffer = tf2_ros.Buffer()
     tf2_ros.TransformListener(tf_buffer)
     adapters = [CorrectedWrench(side, tf_buffer) for side in rospy.get_param("~sides")]
-    rospy.loginfo(
-        "ft_corrected_sim: publishing %d corrected wrist wrenches", len(adapters)
-    )
+    rospy.loginfo("ft_corrected_sim: publishing %d corrected wrist wrenches", len(adapters))
     rospy.spin()
 
 

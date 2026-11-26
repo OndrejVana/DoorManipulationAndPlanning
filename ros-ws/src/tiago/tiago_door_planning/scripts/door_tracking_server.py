@@ -18,7 +18,9 @@ from tiago_door_planning.sensing.wrench import (
     lost_grasp_update,
 )
 from tiago_door_planning.motion.compliance import (
+    RADIAL,
     TANGENTIAL,
+    VERTICAL,
     admittance_step,
     door_axes,
     offset_in_world,
@@ -51,6 +53,7 @@ from tiago_door_planning.motion.tracking import (
     JointLimits,
     Measurement,
     TrackingGains,
+    base_distance,
     base_tracking_step,
     door_angle_from_gripper,
     integrate_joint_command,
@@ -101,7 +104,6 @@ class DoorTrackingServer(object):
         # Frame the base is tracked in: map follows the SLAM, which corrects the wheel odometry's turning error
         self._frame = self._tracking.get("frame", ODOM_FRAME)
         self._force = force_params(self._config)
-        self._compliance = compliance_params(self._config)
         self._robot = Robot(self._config)
         self._cmd_vel = rospy.Publisher(
             "/mobile_base_controller/cmd_vel", Twist, queue_size=1
@@ -134,6 +136,7 @@ class DoorTrackingServer(object):
         arm = self._robot.load_arm(goal.arm)
         grasp_offset = None
         self._force_watch = goal.grasp_action in self._force.lost_by_force
+        self._compliance = compliance_params(self._config, goal.grasp_action)
         self._free = np.array(goal.free_wrench) if len(goal.free_wrench) == 6 else None
         if goal.grasped:
             self._start_force(arm.side)
@@ -199,6 +202,13 @@ class DoorTrackingServer(object):
             if now > deadline:
                 return measurement, progress, "timeout"
             if now - stall_time > rospy.Duration(self._tracking["stall_timeout_s"]):
+                if progress - stall_progress < 1.0 and grasp_offset is None:
+                    return (
+                        measurement,
+                        progress,
+                        "base stuck %.2f m from its path"
+                        % base_distance(reference_at(trajectory, progress), measurement),
+                    )
                 if progress - stall_progress < 1.0:
                     rospy.loginfo(
                         "[DoorTracking] stalled with q %s, planned %s",
@@ -376,7 +386,7 @@ class DoorTrackingServer(object):
         if not self._force_log:
             return
         log = np.array(self._force_log)
-        offset = np.delete(log[:, 4:7], TANGENTIAL, axis=1)
+        offset = np.max(np.abs(log[:, [4 + RADIAL, 4 + VERTICAL]]), axis=0)
         rospy.loginfo(
             "[DoorTracking] force radial/tangential/vertical mean %s peak %s N, bar torque mean %.2f peak %.2f Nm,"
             " offset radial/vertical peak %s mm%s",
@@ -384,8 +394,8 @@ class DoorTrackingServer(object):
             rounded(np.max(np.abs(log[:, :3]), axis=0), 1),
             np.mean(np.abs(log[:, 3])),
             np.max(np.abs(log[:, 3])),
-            rounded(1000.0 * np.max(np.abs(offset), axis=0), 0),
-            ", at the limit" if np.max(np.abs(offset)) >= self._compliance.max_offset - 1e-6 else "",
+            rounded(1000.0 * offset, 0),
+            ", at the limit" if np.max(offset) >= self._compliance.max_offset - 1e-6 else "",
         )
         rospy.loginfo(
             "[DoorTracking] door load along its motion: %s, lowest after it built up %.1f N",

@@ -14,6 +14,11 @@
     <rosparam command="load" file="$(arg overrides)" if="$(eval arg('overrides') != '')"/>
   </node>
 
+  <node pkg="tiago_door_planning" type="door_leaf_tracker.py" name="door_leaf_tracker" output="screen">
+    <rosparam command="load" file="$(arg config)"/>
+    <rosparam command="load" file="$(arg overrides)" if="$(eval arg('overrides') != '')"/>
+  </node>
+
   <node pkg="tiago_door_planning" type="door_plan_viz.py" name="door_plan_viz">
     <rosparam command="load" file="$(arg config)"/>
     <rosparam command="load" file="$(arg overrides)" if="$(eval arg('overrides') != '')"/>

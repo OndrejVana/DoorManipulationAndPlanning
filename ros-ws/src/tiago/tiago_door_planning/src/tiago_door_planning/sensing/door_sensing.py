@@ -21,6 +21,12 @@ def scan_points(ranges, angle_min, angle_increment, range_max):
     )
 
 
+def scan_points_in(scan, frame_from_laser):
+    """(N, 2) points of a LaserScan-like message in the frame frame_from_laser (planar, 3x3 or 4x4) maps into."""
+    points = scan_points(scan.ranges, scan.angle_min, scan.angle_increment, scan.range_max)
+    return points @ frame_from_laser[:2, :2].T + frame_from_laser[:2, -1]
+
+
 def _points_near_leaf(scene, points_xy, params):
     distances = np.linalg.norm(points_xy - scene.hinge[:2], axis=1)
     near = (distances >= params.hinge_clearance) & (
@@ -59,6 +65,16 @@ def door_angle_from_points(scene, points_xy, params, min_angle=0.0):
     if np.sum(distances[best] < params.inlier_distance) < params.min_inliers:
         return None
     return float(candidates[best])
+
+
+def tracked_door_angle(scene, points_xy, params, near_angles, window):
+    """The fitted door angle within window of near_angles (the angle tracked last, the one a running segment moves the
+    door to), or None when too few points lie on the leaf there; over the whole range without near_angles. A tracked
+    leaf may close: a pull door swings back once let go."""
+    if not near_angles:
+        return door_angle_from_points(scene, points_xy, params)
+    high = min(params.max_angle, max(near_angles) + window)
+    return door_angle_from_points(scene, points_xy, params._replace(max_angle=high), min(near_angles) - window)
 
 
 def ray_entries(origin, ends, box):
@@ -102,10 +118,7 @@ def scan_door_reading(scan, frame_from_laser, scene, params, min_angle=0.0):
     """The fitted door angle (None without enough points on the leaf) and the angle the door is open at least,
     from a LaserScan-like message, with the scene in the frame frame_from_laser maps into.
     """
-    points = scan_points(
-        scan.ranges, scan.angle_min, scan.angle_increment, scan.range_max
-    )
-    points = points @ frame_from_laser[:2, :2].T + frame_from_laser[:2, 3]
+    points = scan_points_in(scan, frame_from_laser)
     return DoorReading(
         door_angle_from_points(scene, points, params, min_angle),
         door_angle_at_least(scene, frame_from_laser[:2, 3], points, params, min_angle),

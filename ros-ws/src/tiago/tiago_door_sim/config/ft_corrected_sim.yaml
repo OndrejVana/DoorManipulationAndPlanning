@@ -1,16 +1,17 @@
-# ft_corrected_sim: Gazebo wrist torque -> corrected wrench (see the node's docstring).
+# ft_corrected_sim: Gazebo F/T joint wrench -> corrected wrench (see the node's docstring).
 sides: [left, right]
-# Grasp point and sensor origin from the arm_*_7_joint origin, in the sensor axes (from the URDF).
-lever_arm: [0.02, 0.0, 0.197]
-sensor_offset: [0.0, 0.0, 0.0538]
+# Physics steps averaged into one published wrench: the joint wrench flips sign every step.
+average_steps: 10
 drop_probability: 0.17
-# torque_rotation: Gazebo torque (arm_*_7_link axes) into the sensor axes, row-major.
-# mass_com [kg m] and bias [Nm]: fitted to the torque over static poses with the hand open.
+# mass [kg], mass_com [kg m], force_bias [N] and torque_bias [Nm] in the sensor axes: fitted to the joint wrench over
+# 13 static wrist poses with the hand open (residuals below 0.25 N and 0.02 Nm).
 right:
-  torque_rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1]
-  mass_com: [-0.0028, -0.0001, 0.1512]
-  bias: [0.107, -0.147, 0.024]
+  mass: 1.1338
+  mass_com: [0.0024, 0.0032, 0.0946]
+  force_bias: [0.014, 0.0, -0.048]
+  torque_bias: [0.0003, 0.0002, -0.002]
 left:
-  torque_rotation: [-1, 0, 0, 0, 1, 0, 0, 0, -1]
-  mass_com: [0.0178, -0.0013, 0.1694]
-  bias: [0.133, -0.287, 0.218]
+  mass: 1.1328
+  mass_com: [0.0021, -0.0014, 0.0946]
+  force_bias: [0.009, 0.024, -0.059]
+  torque_bias: [0.0004, 0.0005, 0.0012]
