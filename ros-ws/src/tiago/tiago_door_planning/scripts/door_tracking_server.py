@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Action server executing one door segment: closed-loop whole-body tracking, or the base alone when released."""
 
+import time
+
 import actionlib
 import numpy as np
 import rospy
@@ -39,6 +41,7 @@ from tiago_door_planning.ros.config import (
     compliance_params,
     door_dimensions,
     force_params,
+    push_force_params,
 )
 from tiago_door_planning.msg import (
     ExecuteDoorSegmentAction,
@@ -60,6 +63,8 @@ from tiago_door_planning.motion.tracking import (
     measure_grasp_offset,
     tracking_step,
 )
+from tiago_door_planning.motion.cycle_timer import CycleTimer, describe_parts
+from tiago_door_planning.motion.push_force import breakaway_start, breakaway_update, push_rate, resisting_force
 from tiago_door_planning.motion.trajectory import (
     DoorTrajectory,
     last_progress,
@@ -137,6 +142,12 @@ class DoorTrackingServer(object):
         grasp_offset = None
         self._force_watch = goal.grasp_action in self._force.lost_by_force
         self._compliance = compliance_params(self._config, goal.grasp_action)
+        self._push_force = (
+            push_force_params(self._config)
+            if goal.grasp_action in self._config["force"]["push_force_actions"]
+            else None
+        )
+        self._breakaway, self._push_log = breakaway_start(), []
         self._free = np.array(goal.free_wrench) if len(goal.free_wrench) == 6 else None
         if goal.grasped:
             self._start_force(arm.side)
@@ -149,11 +160,14 @@ class DoorTrackingServer(object):
                 start.gripper_in_base,
             )
         self._log_base_error("start", trajectory, 0.0, start)
+        self._timer = CycleTimer(self._tracking["slow_cycle_s"])
         measurement, progress, failure = self._track(trajectory, arm, grasp_offset)
+        self._log_cycles()
         self._log_base_error("end", trajectory, progress, measurement)
         if grasp_offset is not None:
             self._log_slip(grasp_offset, measurement)
             self._log_force()
+            self._log_push_force()
             self._log_arm(arm)
         self._stop(arm, measurement.q, goal.grasped)
         self._finish(
@@ -195,10 +209,20 @@ class DoorTrackingServer(object):
         stall_progress, stall_time = progress, rospy.Time.now()
         lost_since = None
         door_angle, offset = trajectory.door_angles[0], np.zeros(3)
+        timer = self._timer
         while not rospy.is_shutdown():
+            slow = timer.start(time.monotonic())
+            if slow is not None:
+                rospy.logwarn(
+                    "[DoorTracking] cycle took %.0f ms: %s", 1000.0 * slow.total, describe_parts(slow.parts)
+                )
             measurement, now = self._measure(arm), rospy.Time.now()
+            timer.mark("measure", time.monotonic())
             if self._server.is_preempt_requested():
                 return measurement, progress, "preempted"
+            lost = self._robot.localization_lost()
+            if lost is not None:
+                return measurement, progress, lost
             if now > deadline:
                 return measurement, progress, "timeout"
             if now - stall_time > rospy.Duration(self._tracking["stall_timeout_s"]):
@@ -221,13 +245,22 @@ class DoorTrackingServer(object):
                         "stalled, gripper cannot follow the handle",
                     )
                 stall_progress, stall_time = progress, now
-            shift = np.zeros(3)
+            timer.mark("checks", time.monotonic())
+            shift, motion_shift, force_rate = np.zeros(3), np.zeros(3), 1.0
             if grasp_offset is not None:
                 offset = self._comply(arm.side, offset, door_angle, measurement, dt)
-                shift = offset_in_world(offset, door_axes(self._scene, door_angle))
+                axes = door_axes(self._scene, door_angle)
+                shift = offset_in_world(offset, axes)
+                motion_shift = offset_in_world(offset * np.eye(3)[TANGENTIAL], axes)
+                force_rate = self._push_force_rate(now.to_sec())
+                timer.mark("comply", time.monotonic())
+                # Fits a new scan here, so _step below finds it cached and the laser gets its own time
+                self._door_from_scan()
+                timer.mark("laser", time.monotonic())
             command = self._step(
-                trajectory, progress, grasp_offset, measurement, gains, dt, shift
+                trajectory, progress, grasp_offset, measurement, gains, dt, shift, motion_shift, force_rate
             )
+            timer.mark("step", time.monotonic())
             if grasp_offset is not None:
                 self._note_arm(trajectory, progress, grasp_offset, measurement, shift, arm)
             door_angle = command.door_angle
@@ -264,15 +297,54 @@ class DoorTrackingServer(object):
                 dt,
                 self._tracking["max_command_lead"],
             )
+            timer.mark("notes", time.monotonic())
             self._publish(arm, q_command, command, grasp_offset is not None)
             self._feedback(trajectory, command)
+            timer.mark("publish", time.monotonic())
             progress = command.progress
             if command.status == DONE:
                 return measurement, progress, ""
             rate.sleep()
+            timer.mark("sleep", time.monotonic())
         return self._measure(arm), progress, "shutdown"
 
-    def _step(self, trajectory, progress, grasp_offset, measurement, gains, dt, shift):
+    def _log_cycles(self):
+        cycles, slow, longest, parts = self._timer.summary()
+        rospy.loginfo(
+            "[DoorTracking] %d cycles, %d over %.0f ms, longest %.0f ms; longest per part (ms): %s",
+            cycles,
+            slow,
+            1000.0 * self._tracking["slow_cycle_s"],
+            1000.0 * longest,
+            describe_parts(parts),
+        )
+
+    def _push_force_rate(self, now):
+        """Progress factor from the door pushing back on the hand (push grasps; 1 otherwise)."""
+        if self._push_force is None or self._door_force is None:
+            return 1.0
+        resisting = resisting_force(self._door_force, TANGENTIAL)
+        holding_before = self._breakaway.hold_until is not None and now < self._breakaway.hold_until
+        self._breakaway = breakaway_update(self._breakaway, now, resisting, self._push_force)
+        rate = push_rate(self._breakaway, now, resisting, self._push_force)
+        if rate == 0.0 and not holding_before and resisting < self._push_force.lost_force:
+            rospy.loginfo("[DoorTracking] door broke free: holding the plan %.1f s", self._push_force.hold_s)
+        self._push_log.append((now, resisting, rate))
+        return rate
+
+    def _log_push_force(self):
+        if not self._push_log:
+            return
+        log = np.array(self._push_log)
+        dt = np.diff(log[:, 0], append=log[-1, 0])
+        rospy.loginfo(
+            "[DoorTracking] push force: resisting peak %.1f N; plan slowed %.1f s, stopped %.1f s",
+            np.max(log[:, 1]),
+            np.sum(dt[(log[:, 2] > 0.0) & (log[:, 2] < 1.0)]),
+            np.sum(dt[log[:, 2] == 0.0]),
+        )
+
+    def _step(self, trajectory, progress, grasp_offset, measurement, gains, dt, shift, motion_shift, force_rate):
         if grasp_offset is None:
             return base_tracking_step(trajectory, progress, measurement, gains, dt)
         reading = self._door_from_scan()
@@ -287,6 +359,8 @@ class DoorTrackingServer(object):
             dt,
             at_least,
             shift,
+            motion_shift,
+            force_rate,
         )
 
     def _start_force(self, side):

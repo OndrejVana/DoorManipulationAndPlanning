@@ -14,7 +14,7 @@ from ..model.kinematics import (
     middle_configuration,
     solve_ik,
 )
-from ..motion.arm_moves import Surroundings, grasp_reachable
+from ..motion.arm_moves import Surroundings, body_clearance, grasp_reachable
 from ..motion.grasp_motion import grasp_offset, toward_robot
 from ..motion.trajectory import split_by_sweep
 from ..ros.config import collision_params, door_dimensions
@@ -138,7 +138,9 @@ def grip_checks(config, push, scenes, offsets, normals, arms, home, grip):
             )
             if converged and has_joint_margin(arm, q, joint_margin):
                 active = link_spheres(arm, q)
-                if not arms_collide(active, passive_spheres, collision):
+                if not arms_collide(active, passive_spheres, collision) and (
+                    body_clearance(arm, q) >= collision.margin
+                ):
                     accepted["q"], accepted["spheres"] = q, active
                     return q
         return None

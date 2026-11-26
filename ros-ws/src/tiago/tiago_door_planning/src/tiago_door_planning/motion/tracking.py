@@ -226,10 +226,14 @@ def tracking_step(
     dt,
     door_at_least=None,
     target_shift=(0.0, 0.0, 0.0),
+    motion_shift=(0.0, 0.0, 0.0),
+    force_rate=1.0,
 ):
     """The door is passive: when it runs ahead of the reference, progress jumps to the angle the gripper implies,
     and the segment ends when the laser shows the door already past its end. target_shift (world frame) moves the
-    gripper target where the hand gives way to the handle."""
+    gripper target where the hand gives way to the handle; motion_shift is its part along the door's motion, where
+    the hand that gave way still holds the handle, so the door angle comes from the gripper with it. force_rate
+    (0..1) slows the progress further (push_force)."""
     if (
         door_at_least is not None
         and door_at_least - gains.catch_up_margin >= trajectory.door_angles[-1]
@@ -238,8 +242,13 @@ def tracking_step(
             measurement, last_progress(trajectory), door_at_least, DONE
         )
     held = without_shift(measurement.gripper_in_base, target_shift, measurement.base_pose)
+    on_handle = without_shift(
+        measurement.gripper_in_base,
+        np.asarray(target_shift, dtype=float) - np.asarray(motion_shift, dtype=float),
+        measurement.base_pose,
+    )
     door_angle = door_angle_from_gripper(
-        scene, grasp_offset, measurement.base_pose, held
+        scene, grasp_offset, measurement.base_pose, on_handle
     )
     progress = caught_up_progress(
         trajectory, progress, door_angle - gains.catch_up_margin, measurement, gains
@@ -257,7 +266,7 @@ def tracking_step(
         return standing_still(measurement, progress, door_angle, ABORT, gripper_error)
 
     base_error = base_distance(reference, measurement)
-    rate = progress_rate(gripper_error, base_error, gains)
+    rate = min(progress_rate(gripper_error, base_error, gains), force_rate)
     linear, angular = base_command(reference, measurement.base_pose, rate, gains)
     next_step = next_progress(trajectory, progress, rate, dt)
     planned_velocity = (

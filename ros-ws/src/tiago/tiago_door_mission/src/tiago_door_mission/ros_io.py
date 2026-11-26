@@ -10,15 +10,16 @@ from actionlib_msgs.msg import GoalStatus
 from control_msgs.msg import PointHeadAction, PointHeadGoal
 from geometry_msgs.msg import Point, Point32, PolygonStamped, Pose, PoseStamped
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
-from nav_msgs.msg import OccupancyGrid
+from nav_msgs.msg import OccupancyGrid, Odometry
 from play_motion_msgs.msg import PlayMotionAction, PlayMotionGoal
 from std_msgs.msg import Bool, Int32, String
 
 from tiago_door_planning.model.door_scene import scene_from_door_poses, swept_polygon
 from tiago_door_planning.model.geometry import rotation_to_quaternion
 from tiago_door_planning.msg import OpenDoorAction, OpenDoorGoal, PassDoorAction, PassDoorGoal
-from tiago_door_planning.ros.config import door_dimensions
+from tiago_door_planning.ros.config import door_dimensions, localization_params
 from tiago_door_planning.ros.ros_conversions import pose_msg_to_matrix
+from tiago_door_planning.sensing.localization import LocalizationWatch, is_localization_lost
 from tiago_door_planning.srv import (
     MeasureDoor,
     MeasureDoorRequest,
@@ -137,6 +138,18 @@ class RosMissionIO(object):
         self._plan_approach = rospy.ServiceProxy("plan_approach", PlanApproach)
         self._measure_door = rospy.ServiceProxy("measure_door", MeasureDoor)
         self._track_leaf = rospy.ServiceProxy("track_door_leaf", TrackDoorLeaf)
+        # Goals that move the robot end when the SLAM loses track (door_motion.yaml localization)
+        self._localization = None
+        localization = localization_params(params["door_motion"])
+        if localization is not None and not self._dry_run:
+            self._localization = LocalizationWatch(localization, rospy.get_time())
+            rospy.Subscriber(localization.topic, Odometry, self._on_localization, queue_size=10)
+
+    def _on_localization(self, msg):
+        self._localization.update(rospy.get_time(), msg.pose.covariance[0])
+
+    def _localization_lost(self):
+        return None if self._localization is None else self._localization.lost(rospy.get_time())
 
     # Run control
 
@@ -184,6 +197,9 @@ class RosMissionIO(object):
             rospy.wait_for_message(self._params["costmap_topic"], OccupancyGrid, timeout=self._params["costmap_wait_s"])
         except rospy.ROSException:
             missing.append(self._params["costmap_topic"])
+        lost = self._localization_lost()
+        if lost is not None:
+            missing.append(lost)
         return missing
 
     def tuck_arms(self):
@@ -304,6 +320,8 @@ class RosMissionIO(object):
         result = self._open.get_result()
         if result is None:
             return False, 0.0, message
+        if not ok and is_localization_lost(message):
+            return False, result.final_door_angle, message
         return ok and result.success, result.final_door_angle, result.message
 
     def pass_door(self, door, angle):
@@ -311,7 +329,7 @@ class RosMissionIO(object):
         goal.door_angle = angle
         ok, message = self._run(self._pass, goal, self._params["pass_timeout_s"])
         result = self._pass.get_result()
-        if result is None:
+        if result is None or (not ok and is_localization_lost(message)):
             return False, message
         return ok and result.success, result.message
 
@@ -322,9 +340,12 @@ class RosMissionIO(object):
                 client.cancel_goal()
 
     def _run(self, client, goal, timeout):
-        """(ok, message) of one action goal; a stop request or the timeout cancels it."""
+        """(ok, message) of one action goal; a stop request, a lost localization or the timeout cancels it."""
         if not client.wait_for_server(rospy.Duration(SERVER_WAIT_S)):
             return False, "no action server"
+        lost = self._localization_lost()
+        if lost is not None:
+            return False, lost
         client.send_goal(goal)
         deadline = rospy.get_time() + timeout
         while not client.wait_for_result(rospy.Duration(0.2)):
@@ -336,6 +357,11 @@ class RosMissionIO(object):
                 client.cancel_goal()
                 client.wait_for_result(rospy.Duration(5.0))
                 return False, "timed out after %.0f s" % timeout
+            lost = self._localization_lost()
+            if lost is not None:
+                client.cancel_goal()
+                client.wait_for_result(rospy.Duration(5.0))
+                return False, lost
         state = client.get_state()
         if state != GoalStatus.SUCCEEDED:
             return False, "ended %s: %s" % (GOAL_STATES.get(state, state), client.get_goal_status_text())

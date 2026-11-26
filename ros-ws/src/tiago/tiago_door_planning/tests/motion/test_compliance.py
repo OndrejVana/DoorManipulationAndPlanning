@@ -13,7 +13,7 @@ from tiago_door_planning.motion.compliance import (
     offset_in_world,
 )
 
-PARAMS = ComplianceParams(3.0, 0.002, 0.04, 5.0, False)
+PARAMS = ComplianceParams(3.0, 0.002, 0.04, 5.0, False, False, 0.02)
 
 
 def scene(push=True):
@@ -78,3 +78,32 @@ def test_offset_in_world_combines_the_axes():
     axes = door_axes(scene(), 0.0)
 
     assert np.allclose(offset_in_world([0.01, 0.0, 0.02], axes), [0.0, 0.01, 0.02])
+
+
+PUSH = PARAMS._replace(tangential=True)
+
+
+def test_tangential_offset_stays_zero_unless_asked():
+    offset = admittance_step(np.zeros(3), np.array([0.0, -30.0, 0.0]), 0.1, PARAMS)
+
+    assert offset[TANGENTIAL] == 0.0
+
+
+def test_hand_gives_back_from_a_door_that_resists():
+    offset = admittance_step(np.zeros(3), np.array([0.0, -30.0, 0.0]), 0.1, PUSH)
+
+    assert offset[TANGENTIAL] < 0.0
+
+
+def test_hand_never_gives_ahead_of_the_door():
+    offset = admittance_step(np.zeros(3), np.array([0.0, 30.0, 0.0]), 0.1, PUSH)
+
+    assert offset[TANGENTIAL] == 0.0
+
+
+def test_tangential_give_is_clipped_to_its_own_limit():
+    offset = np.zeros(3)
+    for _ in range(200):
+        offset = admittance_step(offset, np.array([0.0, -60.0, 0.0]), 0.1, PUSH)
+
+    assert np.isclose(offset[TANGENTIAL], -PUSH.max_tangential_offset)

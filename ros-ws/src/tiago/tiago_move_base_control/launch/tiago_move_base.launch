@@ -29,7 +29,7 @@
         holonomic_robot: false
         yaw_goal_tolerance: 0.05
         xy_goal_tolerance: 0.05
-        latch_xy_goal_tolerance: false
+        latch_xy_goal_tolerance: true
       </rosparam>
 
       <!-- Obstacles from the base laser only -->

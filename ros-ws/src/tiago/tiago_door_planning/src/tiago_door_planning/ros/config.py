@@ -7,7 +7,9 @@ from ..planning.door_goal import GoalParams
 from ..planning.door_planner import PlannerParams
 from ..model.door_scene import DoorDimensions
 from ..motion.compliance import ComplianceParams
+from ..motion.push_force import PushForceParams
 from ..sensing.door_sensing import ScanParams
+from ..sensing.localization import LocalizationParams
 from ..sensing.wrench import ForceParams
 
 
@@ -56,9 +58,29 @@ def force_params(config):
     return section_params(ForceParams, config["force"])
 
 
+def localization_params(config):
+    """None when no localization topic is set: nothing then stops the robot for a lost localization."""
+    localization = config.get("localization", {})
+    if not localization.get("topic"):
+        return None
+    return section_params(LocalizationParams, localization)
+
+
 def compliance_params(config, grasp_action):
     force = config["force"]
-    return section_params(ComplianceParams, force, vertical=grasp_action in force["vertical_compliance"])
+    return section_params(
+        ComplianceParams,
+        force,
+        vertical=grasp_action in force["vertical_compliance"],
+        tangential=grasp_action in force["tangential_compliance"],
+    )
+
+
+def push_force_params(config):
+    force = config["force"]
+    return PushForceParams(
+        force["push_force_slow"], force["push_force_stop"], force["lost_force"], force["lost_s"], force["breakaway_hold_s"]
+    )
 
 
 def pipeline_rate(today, fast, speed):

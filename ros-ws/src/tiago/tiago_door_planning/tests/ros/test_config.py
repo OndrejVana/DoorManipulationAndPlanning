@@ -12,7 +12,9 @@ from tiago_door_planning.ros.config import (
     compliance_params,
     force_params,
     goal_params,
+    localization_params,
     planner_params,
+    push_force_params,
     scan_params,
 )
 
@@ -134,3 +136,25 @@ def test_a_push_grip_keeps_its_wrist_further_from_the_limits():
 
     assert np.allclose(grip_joint_margin(planner, True), [0.25, 0.25, 0.25, 0.25, 0.45, 0.45, 0.25])
     assert grip_joint_margin(planner, False) == 0.2
+
+
+def test_localization_params_from_the_shipped_config():
+    params = localization_params(load_config())
+
+    assert params.topic == "/odom_icp"
+    assert params.lost_covariance > 1.0
+
+
+def test_empty_localization_topic_switches_the_watch_off():
+    config = load_config()
+    config["localization"]["topic"] = ""
+
+    assert localization_params(config) is None
+
+
+def test_tangential_give_and_push_force_only_for_push_grasps():
+    config = load_config()
+
+    assert compliance_params(config, "push").tangential
+    assert not compliance_params(config, "pull").tangential
+    assert push_force_params(config).slow < push_force_params(config).stop

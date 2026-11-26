@@ -89,11 +89,13 @@ from tiago_door_planning.planning.plan_output import plan_to_segments
 from tiago_door_planning.ros.robot import (
     SCAN_TOPIC,
     SIDES,
+    LocalizationLost,
     OpeningFailed,
     Robot,
     SegmentFailed,
 )
 from tiago_door_planning.ros.ros_conversions import pose_msg_to_matrix
+from tiago_door_planning.sensing.localization import is_localization_lost
 from tiago_door_planning.motion.tracking import (
     door_angle_from_gripper,
     measure_grasp_offset,
@@ -314,6 +316,9 @@ class DoorOpeningServer(object):
             self._measure_door(self._scenes["front"], self._offsets[grip])
         try:
             self._open_with_recoveries(plan.segments)
+        except LocalizationLost as error:
+            rospy.logerr("[DoorOpening] %s; holding still, the operator takes over", error)
+            raise
         except OpeningFailed as error:
             if self._goal.release_at_end and str(error) != "preempted":
                 self._let_go_after_failure()
@@ -879,6 +884,7 @@ class DoorOpeningServer(object):
         client = self._segment_client
         if not client.wait_for_server(rospy.Duration(5.0)):
             raise OpeningFailed("no execute_door_segment server")
+        self._robot.check_localization()
         client.send_goal(
             segment_goal(
                 self._goal, scene, trajectory, grasped, self._holding_action, self._free_wrench
@@ -902,6 +908,8 @@ class DoorOpeningServer(object):
         if result is None:
             raise OpeningFailed("door segment returned no result")
         self._door_angle, self._laser_decided = result.final_door_angle, False
+        if not result.success and is_localization_lost(result.message):
+            raise LocalizationLost(result.message)
         if not result.success:
             raise SegmentFailed("door segment failed: %s" % result.message)
 

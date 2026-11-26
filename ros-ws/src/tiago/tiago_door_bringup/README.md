@@ -44,6 +44,14 @@ checks the door lock, the mask, the approach poses and the opening plan on real 
 rosrun tiago_door_bringup replay.sh ~/bags/door_planning_test_2026-11-19_15-20-11 rviz:=false
 ```
 
+## RViz Configuration
+
+A default RViz configuration is available at `rviz/tiago_door_nav.rviz`.
+
+```bash
+rviz -d $(rospack find tiago_door_bringup)/rviz/tiago_door_main.rviz
+```
+
 ## Other
 
 ```bash

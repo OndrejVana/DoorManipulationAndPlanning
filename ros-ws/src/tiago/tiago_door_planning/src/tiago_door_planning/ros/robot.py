@@ -11,15 +11,17 @@ from control_msgs.msg import (
     FollowJointTrajectoryResult,
 )
 from geometry_msgs.msg import WrenchStamped
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 from ..sensing.door_sensing import scan_door_reading
+from ..sensing.localization import LocalizationWatch
 from ..sensing.wrench import contact_start, contact_update, in_contact, zero_offset
 from ..model.geometry import matrix_to_pose2d
 from ..motion.grasp_motion import waypoint_times
 from ..model.kinematics import arm_joint_names, load_arm_model
-from .config import force_params, scan_params
+from .config import force_params, localization_params, scan_params
 from .ros_conversions import (
     joint_position_map,
     joint_positions,
@@ -41,6 +43,11 @@ class OpeningFailed(Exception):
 
 class SegmentFailed(OpeningFailed):
     """A door segment or an arm move did not finish; the robot is still in a known state to plan again from."""
+
+
+class LocalizationLost(OpeningFailed):
+    """The SLAM lost track of the robot: the robot holds still where it is, since every plan and every collision check
+    from here on would use a pose that is wrong; no replanning, no letting go, no parking."""
 
 
 def hand_joint_names(side):
@@ -78,12 +85,21 @@ def wrench_vector(msg):
     return np.array([force.x, force.y, force.z, torque.x, torque.y, torque.z])
 
 
-def send_and_wait(client, goal, duration):
+def send_and_wait(client, goal, duration, check=None):
+    """check() runs while the goal runs; an error it raises cancels the goal, which leaves the joints where they are."""
     client.wait_for_server(rospy.Duration(5.0))
     client.send_goal(goal)
-    if not client.wait_for_result(rospy.Duration(3.0 * duration + 5.0)):
-        client.cancel_goal()
-        raise OpeningFailed("trajectory timed out")
+    deadline = rospy.get_time() + 3.0 * duration + 5.0
+    while not client.wait_for_result(rospy.Duration(0.05)):
+        try:
+            if check is not None:
+                check()
+        except OpeningFailed:
+            client.cancel_goal()
+            raise
+        if rospy.get_time() > deadline or rospy.is_shutdown():
+            client.cancel_goal()
+            raise OpeningFailed("trajectory timed out")
     return client.get_state()
 
 
@@ -107,6 +123,11 @@ class Robot(object):
                 side,
                 queue_size=50,
             )
+        self._localization = None
+        params = localization_params(config)
+        if params is not None:
+            self._localization = LocalizationWatch(params, rospy.get_time())
+            rospy.Subscriber(params.topic, Odometry, self._on_localization, queue_size=10)
         if with_moves:
             self._arm_clients = trajectory_clients("arm")
             self._hand_clients = trajectory_clients("hand")
@@ -118,6 +139,20 @@ class Robot(object):
     def _on_wrench(self, msg, side):
         """Kept by arrival time: the robot's header stamps run up to half a second off the laptop clock."""
         self._wrenches[side].append((rospy.get_time(), wrench_vector(msg)))
+
+    def _on_localization(self, msg):
+        self._localization.update(rospy.get_time(), msg.pose.covariance[0])
+
+    def localization_lost(self):
+        """Why the SLAM pose cannot be trusted now, or None (also when the watch is switched off)."""
+        if self._localization is None:
+            return None
+        return self._localization.lost(rospy.get_time())
+
+    def check_localization(self):
+        reason = self.localization_lost()
+        if reason is not None:
+            raise LocalizationLost(reason)
 
     def wrench_topic(self, side):
         return self._force.topic.format(side=side)
@@ -168,6 +203,8 @@ class Robot(object):
             arm["sphere_radius"],
             arm["sphere_spacing"],
             joint_position_map(self._joint_state),
+            arm.get("body_spheres", ()),
+            arm.get("body_check_from"),
         )
 
     def door_reading(self, scan, frame, scene, min_angle):
@@ -182,7 +219,8 @@ class Robot(object):
         move counts as done."""
         client = self._arm_clients[side]
         goal, duration = self._arm_goal(side, qs, speeds)
-        send_and_wait(client, goal, duration)
+        self.check_localization()
+        send_and_wait(client, goal, duration, self.check_localization)
         self._arm_result(side, client, qs[-1], contact_tolerance)
 
     def approach_arm(self, side, qs, speeds, contact_tolerance, zero):
@@ -190,6 +228,7 @@ class Robot(object):
         touched instead of pressing on to the planned end; a controller stopping first ends it as move_arm does."""
         client = self._arm_clients[side]
         goal, duration = self._arm_goal(side, qs, speeds)
+        self.check_localization()
         client.wait_for_server(rospy.Duration(5.0))
         client.send_goal(goal)
         state, seen = contact_start(), rospy.get_time()
@@ -204,6 +243,11 @@ class Robot(object):
             if rospy.get_time() > deadline:
                 client.cancel_goal()
                 raise OpeningFailed("trajectory timed out")
+            try:
+                self.check_localization()
+            except LocalizationLost:
+                client.cancel_goal()
+                raise
         stopped = self._arm_result(side, client, qs[-1], contact_tolerance)
         return ApproachEnd("controller" if stopped else "planned end", state.peak)
 
@@ -240,7 +284,7 @@ class Robot(object):
         duration = self._config["grasp"]["hand_duration_s"]
         goal = trajectory_goal(hand_joint_names(side), [positions], [duration])
         if wait:
-            send_and_wait(self._hand_clients[side], goal, duration)
+            send_and_wait(self._hand_clients[side], goal, duration, self.check_localization)
         else:
             self._hand_clients[side].send_goal(goal)
 

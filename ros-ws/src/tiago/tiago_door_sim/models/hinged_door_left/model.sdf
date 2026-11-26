@@ -95,7 +95,7 @@
         <dynamics>
           <damping>0.05</damping>
           <!-- Nm, an interior door without a closer: a pushed leaf stops when the hand stops -->
-          <friction>1.5</friction>
+          <friction>30.0</friction>
         </dynamics>
       </axis>
     </joint>

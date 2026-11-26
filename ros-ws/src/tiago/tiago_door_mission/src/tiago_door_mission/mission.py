@@ -4,6 +4,7 @@ import collections
 
 import numpy as np
 import smach
+from tiago_door_planning.sensing.localization import is_localization_lost
 
 from .door_lock import lock_door
 
@@ -145,6 +146,8 @@ class Mission(object):
             if ok:
                 return "ok"
             failures.append(message)
+            if is_localization_lost(message):
+                break
         return self._fail(
             userdata,
             "cannot reach a pose to view the door from: %s" % "; ".join(failures),
@@ -215,6 +218,8 @@ class Mission(object):
             if ok:
                 return "ok"
             failures.append(message)
+            if is_localization_lost(message):
+                break
         return self._fail(userdata, "navigation failed: %s" % "; ".join(failures))
 
     def open_door(self, userdata):
@@ -227,6 +232,8 @@ class Mission(object):
             userdata.door_angle = angle
             return "dry_run" if self.params.dry_run else "opened"
         userdata.message = "opening failed: %s" % message
+        if is_localization_lost(message):
+            return "failed"
         if angle > self.params.closed_tolerance_near:
             userdata.message += (
                 "; the door is left open at %.0f deg, close it and start again"

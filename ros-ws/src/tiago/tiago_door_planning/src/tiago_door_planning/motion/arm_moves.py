@@ -19,16 +19,23 @@ from .grasp_motion import (
     lift_targets,
     line_path,
 )
-from ..model.kinematics import link_spheres
+from ..model.kinematics import forearm_spheres, link_spheres
 
 Surroundings = collections.namedtuple(
     "Surroundings", "scene door_angle base_pose grid passive_spheres"
 )
 
 
+def body_clearance(arm, q):
+    """How far the forearm and hand stay from the robot's own head and torso (inf without a body check)."""
+    return spheres_clearance(forearm_spheres(arm, q), arm.body_spheres)
+
+
 def arm_path_clear(arm, around, qs, mode, collision):
     walls, door = wall_boxes(around.scene), door_box(around.scene, around.door_angle)
     for q in qs:
+        if body_clearance(arm, q) < collision.margin:
+            return False
         active_spheres = link_spheres(arm, q)
         if arms_collide(active_spheres, around.passive_spheres, collision):
             return False
@@ -52,6 +59,7 @@ def arm_path_clearances(arm, around, qs, mode, collision):
         )
         clearances.append(
             min(
+                body_clearance(arm, q),
                 spheres_clearance(active_spheres, around.passive_spheres),
                 robot_clearance(
                     walls, door, around.grid, around.base_pose, spheres, mode, collision

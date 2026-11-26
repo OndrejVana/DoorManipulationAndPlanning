@@ -4,9 +4,10 @@ import pinocchio as pin
 from scipy.linalg.lapack import dgesv
 from .geometry import Sphere
 
+# body_spheres
 ArmModel = collections.namedtuple(
     "ArmModel",
-    "model data side gripper_frame_id sphere_frame_ids sphere_radius sphere_spacing",
+    "model data side gripper_frame_id sphere_frame_ids sphere_radius sphere_spacing body_spheres body_from",
 )
 
 
@@ -44,7 +45,11 @@ def load_arm_model(
     sphere_radius,
     sphere_spacing,
     fixed_positions,
+    body_spheres=(),
+    body_check_from=None,
 ):
+    """body_spheres: (frame, [x, y, z] in it, radius) on the head and torso, placed with the joints that are not the
+    arm's where fixed_positions has them; body_check_from: the sphere link from which on the arm keeps clear of them."""
     full = pin.buildModelFromXML(urdf_xml)
     q_reference = _reference_configuration(full, fixed_positions)
     model = pin.buildReducedModel(
@@ -54,14 +59,26 @@ def load_arm_model(
         _frame_id(model, name.format(side=side)) for name in sphere_links
     ]
     sphere_frame_ids.append(_frame_id(model, gripper_frame.format(side=side)))
+    data = model.createData()
+    # Head and torso frames do not move with the arm joints, so any arm configuration places them
+    pin.framesForwardKinematics(model, data, pin.neutral(model))
+    body = [
+        Sphere(data.oMf[_frame_id(model, frame)].act(np.array(offset, dtype=float)), radius, False)
+        for frame, offset, radius in body_spheres
+    ]
+    body_from = None
+    if body and body_check_from is not None:
+        body_from = sphere_frame_ids.index(_frame_id(model, body_check_from.format(side=side)))
     return ArmModel(
         model,
-        model.createData(),
+        data,
         side,
         sphere_frame_ids[-1],
         sphere_frame_ids,
         sphere_radius,
         sphere_spacing,
+        body,
+        body_from,
     )
 
 
@@ -144,9 +161,21 @@ def solve_ik(arm, target, seed, iterations=200, tolerance=1e-4, damping=1e-2):
 def link_spheres(arm, q):
     """Collision spheres in the base frame, spaced along the chain of sphere frames; the last segment and the last
     frame belong to the gripper."""
+    return _chain_spheres(arm, q, arm.sphere_frame_ids)
+
+
+def forearm_spheres(arm, q):
+    """The spheres of the chain from arm.body_from on, which keep clear of the robot's head and torso; none without a
+    body check."""
+    if arm.body_from is None:
+        return []
+    return _chain_spheres(arm, q, arm.sphere_frame_ids[arm.body_from:])
+
+
+def _chain_spheres(arm, q, frame_ids):
     _update_frames(arm, q)
     origins = np.array(
-        [arm.data.oMf[frame_id].translation for frame_id in arm.sphere_frame_ids]
+        [arm.data.oMf[frame_id].translation for frame_id in frame_ids]
     )
     spheres = []
     for index, (start, delta) in enumerate(

@@ -53,6 +53,8 @@ class FakeIO(object):
         self.passed = answers.get("passed", True)
         self.on_open = answers.get("on_open")
         self.failed_angle = answers.get("failed_angle", 0.0)
+        self.nav_message = answers.get("nav_message", "nav")
+        self.open_message = answers.get("open_message", "segment failed")
         self.robot = answers.get("robot", robot_at(0.0, 2.0))
 
     def _call(self, name, *args):
@@ -92,14 +94,14 @@ class FakeIO(object):
 
     def navigate(self, pose):
         self._call("navigate", pose)
-        return self.navigations.pop(0), "nav"
+        return self.navigations.pop(0), self.nav_message
 
     def open_door(self, door, plan_only):
         self._call("open_door", plan_only)
         if self.on_open:
             self.on_open()
         ok = self.openings.pop(0)
-        return ok, np.radians(80.0) if ok else self.failed_angle, "opened" if ok else "segment failed"
+        return ok, np.radians(80.0) if ok else self.failed_angle, "opened" if ok else self.open_message
 
     def pass_door(self, door, angle):
         self._call("pass_door", angle)
@@ -337,3 +339,27 @@ def test_view_range_is_close_and_near_the_normal():
     assert in_view_range(door, robot_at(0.3, 1.8), 1.5, np.radians(35.0))
     assert not in_view_range(door, robot_at(0.0, 3.0), 1.5, np.radians(35.0))
     assert not in_view_range(door, robot_at(1.0, 1.0), 1.5, np.radians(35.0))
+
+
+LOST = "localization lost: the scan matching on /odom_icp has failed for 0.6 s; the pose follows the wheels"
+
+
+def test_a_lost_localization_while_opening_stops_without_trying_again():
+    io = FakeIO(openings=[False, True], open_message=LOST)
+
+    outcome, userdata = run(io)
+
+    assert outcome == FAILED
+    assert "localization lost" in userdata.message
+    assert io.names().count("open_door") == 1
+    assert "stop_all" in io.names()
+
+
+def test_a_lost_localization_while_navigating_tries_no_other_approach_pose():
+    io = FakeIO(navigations=[False, True], nav_message=LOST)
+
+    outcome, userdata = run(io)
+
+    assert outcome == FAILED
+    assert io.names().count("navigate") == 1
+    assert "stop_all" in io.names()

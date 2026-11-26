@@ -50,6 +50,8 @@ TOPICS+=(
   /rosout_agg
   # SLAM (tiago_slam): map -> odom is in /tf; /slam/tf holds the odom_icp correction
   /slam_pose /odom_icp /info /map /slam/tf /slam/tf_static
+  # The scan the SLAM gets, with the tracked door leaf blanked out (scan_door_mask)
+  /slam/scan
   # Door perception (tiago_door_localization)
   /tag_detections
   /door/tag_id /door/hinge_side /door/interaction /door/door_side
@@ -58,8 +60,21 @@ TOPICS+=(
   # Door opening (tiago_door_planning)
   /open_door/goal /open_door/feedback /open_door/result
   /execute_door_segment/goal /execute_door_segment/feedback /execute_door_segment/result
+  /pass_door/goal /pass_door/feedback /pass_door/result
+  # Cancels show who preempted a goal
+  /open_door/cancel /execute_door_segment/cancel /pass_door/cancel
   /door_plan_viz/markers
+  # Door leaf tracker: the laser door angle and the polygon masked from the SLAM
+  /door_leaf/angle /door_leaf/polygon
+  # Mission (tiago_door_mission)
+  /door_mission/state /door_mission/result
+  # Navigation: costmap door mask and the approach goals
+  /door_mask/enabled /door_mask/polygon
   /tiago_move_base/move_base/global_costmap/costmap
+  /tiago_move_base/move_base/goal /tiago_move_base/move_base/result /tiago_move_base/move_base/cancel
+  # Head pointing and play_motion (tuck, F/T calibration)
+  /head_controller/point_head_action/goal /head_controller/point_head_action/result
+  /play_motion/goal /play_motion/result
 )
 
 if ! rostopic list > /dev/null 2>&1; then

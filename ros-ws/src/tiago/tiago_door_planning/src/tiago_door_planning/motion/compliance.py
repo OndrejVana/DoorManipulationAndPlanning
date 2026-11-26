@@ -4,8 +4,9 @@ import numpy as np
 
 from ..model.door_scene import door_yaw
 
+# tangential: the hand may give back along the door's motion, up to max_tangential_offset (push grasps)
 ComplianceParams = collections.namedtuple(
-    "ComplianceParams", "deadband compliance max_offset offset_leak_s vertical"
+    "ComplianceParams", "deadband compliance max_offset offset_leak_s vertical tangential max_tangential_offset"
 )
 
 RADIAL, TANGENTIAL, VERTICAL = 0, 1, 2
@@ -26,14 +27,18 @@ def deadband(values, width):
 
 def admittance_step(offset, door_force, dt, params):
     """Offset (radial, tangential, vertical) after dt: it moves with the force beyond the deadband, leaks back to zero
-    and is clipped to max_offset. It never reaches along the door's motion, and up or down only with params.vertical:
-    a pull hook the bar stops vertically never relaxes the force and the offset only slides it off."""
+    and is clipped to max_offset. Up or down only with params.vertical: a pull hook the bar stops vertically never
+    relaxes the force and the offset only slides it off. Along the door's motion only with params.tangential, and only
+    back from the door, up to max_tangential_offset: the hand gives way to a door that resists, never runs ahead."""
     rate = params.compliance * deadband(door_force, params.deadband)
     rate -= np.asarray(offset) / params.offset_leak_s
-    rate[TANGENTIAL] = 0.0
+    if not params.tangential:
+        rate[TANGENTIAL] = 0.0
     if not params.vertical:
         rate[VERTICAL] = 0.0
-    return np.clip(offset + rate * dt, -params.max_offset, params.max_offset)
+    offset = np.clip(offset + rate * dt, -params.max_offset, params.max_offset)
+    offset[TANGENTIAL] = np.clip(offset[TANGENTIAL], -params.max_tangential_offset, 0.0) if params.tangential else 0.0
+    return offset
 
 
 def offset_in_world(offset, axes):

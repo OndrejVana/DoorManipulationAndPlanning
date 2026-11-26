@@ -23,6 +23,7 @@ from tiago_door_planning.motion.tracking import (
     without_roll_on_bar,
     without_shift,
 )
+from tiago_door_planning.motion.compliance import TANGENTIAL, door_axes
 from tiago_door_planning.motion.trajectory import DoorTrajectory, Reference
 
 DIMENSIONS = DoorDimensions(width=0.9, thickness=0.04, height=2.0, wall_thickness=0.15, wall_length=1.0)
@@ -321,3 +322,32 @@ def test_a_hand_that_followed_its_shifted_target_shows_no_error_and_no_door_moti
 
     assert command.gripper_error == pytest.approx(0.0, abs=1e-9)
     assert command.door_angle == pytest.approx(0.0, abs=1e-9)
+
+
+def test_force_rate_zero_holds_the_progress():
+    scene = make_scene()
+    trajectory = make_trajectory()
+    measurement = measurement_on_target(scene, trajectory, 0.0, np.eye(6, 3))
+
+    free = tracking_step(trajectory, 0.0, scene, np.eye(4), measurement, GAINS, 0.02)
+    held = tracking_step(trajectory, 0.0, scene, np.eye(4), measurement, GAINS, 0.02, force_rate=0.0)
+
+    assert free.progress > 0.0
+    assert held.progress == 0.0
+
+
+def test_door_angle_keeps_the_hand_given_way_along_the_door_motion():
+    scene = make_scene()
+    trajectory = make_trajectory()
+    along = door_axes(scene, 0.0)[TANGENTIAL] * 0.02
+    moved = make_pose(along, 0.0) @ handle_pose(scene, 0.0)
+    base_pose = trajectory.base_poses[0]
+    measurement = Measurement(base_pose, np.zeros(3), invert(pose2d_to_matrix(base_pose)) @ moved, np.eye(6, 3))
+
+    removed = tracking_step(trajectory, 0.0, scene, np.eye(4), measurement, GAINS, 0.02, target_shift=along)
+    kept = tracking_step(
+        trajectory, 0.0, scene, np.eye(4), measurement, GAINS, 0.02, target_shift=along, motion_shift=along
+    )
+
+    assert abs(removed.door_angle) < 1e-6
+    assert kept.door_angle > 0.01

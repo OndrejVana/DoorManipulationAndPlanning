@@ -36,6 +36,13 @@ arm:
   sphere_links: ["arm_{side}_1_link", "arm_{side}_3_link", "arm_{side}_4_link", "arm_{side}_6_link"]
   sphere_radius: 0.07
   sphere_spacing: 0.10
+  # The robot's own head and upper torso
+  body_spheres:
+    - [head_2_link, [0.012, 0.04, 0.06], 0.12]
+    - [head_2_link, [0.012, 0.04, -0.06], 0.12]
+    - [head_1_link, [0.01, 0.0, 0.09], 0.09]
+    - [torso_lift_link, [0.05, 0.0, -0.12], 0.19]
+  body_check_from: "arm_{side}_4_link"
 
 collision:
   base_radius: 0.30
@@ -45,6 +52,7 @@ collision:
 tracking:
   frame: map
   rate_hz: 50.0
+  slow_cycle_s: 0.04  # a control cycle longer than this is logged with where its time went
   command_lookahead_s: 0.1
   max_command_lead: 0.15
   joint_velocity_fraction: 0.5
@@ -191,6 +199,21 @@ force:
   max_offset: 0.04
   offset_leak_s: 5.0
   vertical_compliance: [push] # The vertical compliance is only used when pushing the door.
+  # Push grasps: the hand gives back along the door's motion (never ahead) up to max_tangential_offset
+  tangential_compliance: [push]
+  max_tangential_offset: 0.02
+  # Push grasps
+  push_force_actions: [push]
+  push_force_slow: 25.0
+  push_force_stop: 50.0
+  breakaway_hold_s: 0.5
+
+# Stop when the SLAM loses track
+localization:
+  topic: "/odom_icp"  # "" switches the stop off
+  lost_covariance: 1000.0
+  max_lost_s: 0.5 
+  max_silence_s: 1.0
 
 # Driving through after the opening: the first of these distances (m) past the doorway the robot can reach.
 pass:
