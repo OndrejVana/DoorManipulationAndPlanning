@@ -46,6 +46,7 @@ GAINS = TrackingGains(
     base_error_slow=0.05,
     base_error_stop=0.15,
     heading_error_slow=0.09,
+    heading_error_stop=0.26,
     min_base_rate=0.0,
     catch_up_margin=0.0,
 )
@@ -100,6 +101,14 @@ def test_progress_stops_at_large_gripper_error():
 
 def test_base_error_alone_never_stops_progress():
     assert progress_rate(0.0, 1.0, GAINS._replace(min_base_rate=0.3)) == pytest.approx(0.3)
+
+
+def test_heading_lag_stops_progress_despite_the_base_rate_floor():
+    gains = GAINS._replace(min_base_rate=0.3)
+
+    assert progress_rate(0.0, 0.0, gains, heading_error=-0.3) == 0.0
+    assert progress_rate(0.0, 0.0, gains, heading_error=0.05) == 1.0
+    assert 0.0 < progress_rate(0.0, 0.0, gains, heading_error=0.17) < 1.0
 
 
 def test_small_door_lead_does_not_skip_ahead():
@@ -334,6 +343,30 @@ def test_force_rate_zero_holds_the_progress():
 
     assert free.progress > 0.0
     assert held.progress == 0.0
+
+
+def test_held_segment_waits_for_a_base_behind_its_heading():
+    scene = make_scene()
+    trajectory = make_trajectory()
+    base_pose = trajectory.base_poses[0] + [0.0, 0.0, 0.3]
+    gripper = invert(pose2d_to_matrix(base_pose)) @ handle_pose(scene, 0.0)
+    turned = Measurement(base_pose, np.zeros(3), gripper, np.eye(6, 3))
+
+    command = tracking_step(trajectory, 0.0, scene, np.eye(4), turned, GAINS._replace(min_base_rate=0.3, k_heading=1.0), 0.02)
+
+    assert command.progress == 0.0
+    assert command.angular < 0.0
+    assert command.linear == 0.0
+
+
+def test_released_drive_waits_for_a_base_behind_its_heading():
+    trajectory = make_trajectory()
+    turned = Measurement(trajectory.base_poses[0] + [0.0, 0.0, 0.3], np.zeros(3), np.eye(4), np.eye(6, 3))
+
+    command = base_tracking_step(trajectory, 0.0, turned, GAINS._replace(min_base_rate=0.3, k_heading=1.0), 0.02)
+
+    assert command.progress == 0.0
+    assert command.angular < 0.0
 
 
 def test_door_angle_keeps_the_hand_given_way_along_the_door_motion():

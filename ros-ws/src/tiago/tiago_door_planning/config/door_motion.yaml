@@ -75,6 +75,7 @@ tracking:
   base_error_slow: 0.05
   base_error_stop: 0.15
   heading_error_slow: 0.09
+  heading_error_stop: 0.26  # the plan slows from heading_error_slow
   min_base_rate: 0.3
   catch_up_margin: 0.035
   lost_grasp_deg: 10.0

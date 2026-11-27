@@ -5,7 +5,7 @@ SlowCycle = collections.namedtuple("SlowCycle", "total parts")
 
 class CycleTimer(object):
     """start() opens a cycle, mark(name, now) books the time since the previous mark to name, and the next start()
-    closes the cycle; a cycle longer than slow_s is returned by start() as a SlowCycle. Times are wall-clock seconds.
+    closes the cycle; a cycle longer than slow_s is returned by start() as a SlowCycle.
     """
 
     def __init__(self, slow_s):

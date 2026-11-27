@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Action server executing one door segment: closed-loop whole-body tracking, or the base alone when released."""
 
-import time
-
 import actionlib
 import numpy as np
 import rospy
@@ -211,13 +209,13 @@ class DoorTrackingServer(object):
         door_angle, offset = trajectory.door_angles[0], np.zeros(3)
         timer = self._timer
         while not rospy.is_shutdown():
-            slow = timer.start(time.monotonic())
+            slow = timer.start(rospy.get_time())
             if slow is not None:
                 rospy.logwarn(
                     "[DoorTracking] cycle took %.0f ms: %s", 1000.0 * slow.total, describe_parts(slow.parts)
                 )
             measurement, now = self._measure(arm), rospy.Time.now()
-            timer.mark("measure", time.monotonic())
+            timer.mark("measure", rospy.get_time())
             if self._server.is_preempt_requested():
                 return measurement, progress, "preempted"
             lost = self._robot.localization_lost()
@@ -245,7 +243,7 @@ class DoorTrackingServer(object):
                         "stalled, gripper cannot follow the handle",
                     )
                 stall_progress, stall_time = progress, now
-            timer.mark("checks", time.monotonic())
+            timer.mark("checks", rospy.get_time())
             shift, motion_shift, force_rate = np.zeros(3), np.zeros(3), 1.0
             if grasp_offset is not None:
                 offset = self._comply(arm.side, offset, door_angle, measurement, dt)
@@ -253,14 +251,14 @@ class DoorTrackingServer(object):
                 shift = offset_in_world(offset, axes)
                 motion_shift = offset_in_world(offset * np.eye(3)[TANGENTIAL], axes)
                 force_rate = self._push_force_rate(now.to_sec())
-                timer.mark("comply", time.monotonic())
+                timer.mark("comply", rospy.get_time())
                 # Fits a new scan here, so _step below finds it cached and the laser gets its own time
                 self._door_from_scan()
-                timer.mark("laser", time.monotonic())
+                timer.mark("laser", rospy.get_time())
             command = self._step(
                 trajectory, progress, grasp_offset, measurement, gains, dt, shift, motion_shift, force_rate
             )
-            timer.mark("step", time.monotonic())
+            timer.mark("step", rospy.get_time())
             if grasp_offset is not None:
                 self._note_arm(trajectory, progress, grasp_offset, measurement, shift, arm)
             door_angle = command.door_angle
@@ -297,15 +295,15 @@ class DoorTrackingServer(object):
                 dt,
                 self._tracking["max_command_lead"],
             )
-            timer.mark("notes", time.monotonic())
+            timer.mark("notes", rospy.get_time())
             self._publish(arm, q_command, command, grasp_offset is not None)
             self._feedback(trajectory, command)
-            timer.mark("publish", time.monotonic())
+            timer.mark("publish", rospy.get_time())
             progress = command.progress
             if command.status == DONE:
                 return measurement, progress, ""
             rate.sleep()
-            timer.mark("sleep", time.monotonic())
+            timer.mark("sleep", rospy.get_time())
         return self._measure(arm), progress, "shutdown"
 
     def _log_cycles(self):
@@ -329,16 +327,20 @@ class DoorTrackingServer(object):
         rate = push_rate(self._breakaway, now, resisting, self._push_force)
         if rate == 0.0 and not holding_before and resisting < self._push_force.lost_force:
             rospy.loginfo("[DoorTracking] door broke free: holding the plan %.1f s", self._push_force.hold_s)
-        self._push_log.append((now, resisting, rate))
+        self._push_log.append((now, resisting, rate, float(self._door_force[TANGENTIAL])))
         return rate
 
     def _log_push_force(self):
         if not self._push_log:
             return
         log = np.array(self._push_log)
-        dt = np.diff(log[:, 0], append=log[-1, 0])
+        dt = np.append(np.diff(log[:, 0]), 0.0)  # numpy 1.13: no diff(append=)
         rospy.loginfo(
-            "[DoorTracking] push force: resisting peak %.1f N; plan slowed %.1f s, stopped %.1f s",
+            "[DoorTracking] push force: tangential mean %+.1f N, min %+.1f, max %+.1f (negative: the door pushes"
+            " back); resisting peak %.1f N; plan slowed %.1f s, stopped %.1f s",
+            np.mean(log[:, 3]),
+            np.min(log[:, 3]),
+            np.max(log[:, 3]),
             np.max(log[:, 1]),
             np.sum(dt[(log[:, 2] > 0.0) & (log[:, 2] < 1.0)]),
             np.sum(dt[log[:, 2] == 0.0]),

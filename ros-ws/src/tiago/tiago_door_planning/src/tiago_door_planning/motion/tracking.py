@@ -16,7 +16,7 @@ TrackingGains = collections.namedtuple(
     "TrackingGains",
     "k_x k_y k_theta k_heading max_linear max_angular arm_gain damping nullspace_gain limit_gain limit_margin "
     "joint_limits gripper_error_slow gripper_error_stop gripper_error_abort base_error_slow base_error_stop "
-    "heading_error_slow min_base_rate catch_up_margin",
+    "heading_error_slow heading_error_stop min_base_rate catch_up_margin",
 )
 
 JointLimits = collections.namedtuple("JointLimits", "lower upper velocity")
@@ -46,12 +46,26 @@ def base_rate(base_error, gains):
     )
 
 
-def progress_rate(gripper_error, base_error, gains):
+def heading_rate(heading_error, gains):
+    """The plan waits for a base that lags its heading, with no floor: a base the door holds back from turning
+    spends its wheels on the turn instead of the plan pulling the arm off it."""
+    return slowdown_factor(abs(heading_error), gains.heading_error_slow, gains.heading_error_stop)
+
+
+def turn_first(command, heading_error, gains):
+    """(linear, angular) with the linear part eased off like the plan: a base that lags its heading turns with both
+    wheels instead of one wheel driving it forward while the other only holds."""
+    linear, angular = command
+    return linear * heading_rate(heading_error, gains), angular
+
+
+def progress_rate(gripper_error, base_error, gains, heading_error=0.0):
     return min(
         slowdown_factor(
             gripper_error, gains.gripper_error_slow, gains.gripper_error_stop
         ),
         base_rate(base_error, gains),
+        heading_rate(heading_error, gains),
     )
 
 
@@ -81,6 +95,10 @@ def progress_at_angle(trajectory, angle):
 
 def base_distance(reference, measurement):
     return float(np.linalg.norm(reference.base_pose[:2] - measurement.base_pose[:2]))
+
+
+def heading_error(reference, measurement):
+    return float(wrap_angle(reference.base_pose[2] - measurement.base_pose[2]))
 
 
 def base_tracking_error(reference_pose, measured_pose):
@@ -266,8 +284,9 @@ def tracking_step(
         return standing_still(measurement, progress, door_angle, ABORT, gripper_error)
 
     base_error = base_distance(reference, measurement)
-    rate = min(progress_rate(gripper_error, base_error, gains), force_rate)
-    linear, angular = base_command(reference, measurement.base_pose, rate, gains)
+    heading = heading_error(reference, measurement)
+    rate = min(progress_rate(gripper_error, base_error, gains, heading), force_rate)
+    linear, angular = turn_first(base_command(reference, measurement.base_pose, rate, gains), heading, gains)
     next_step = next_progress(trajectory, progress, rate, dt)
     planned_velocity = (
         reference_at(trajectory, next_step).arm_q - reference.arm_q
@@ -297,8 +316,9 @@ def base_tracking_step(trajectory, progress, measurement, gains, dt):
     only once the base stands near the end of its path, not when the reference got there without it."""
     reference = reference_at(trajectory, progress)
     base_error = base_distance(reference, measurement)
-    rate = base_rate(base_error, gains)
-    linear, angular = base_command(reference, measurement.base_pose, rate, gains)
+    heading = heading_error(reference, measurement)
+    rate = min(base_rate(base_error, gains), heading_rate(heading, gains))
+    linear, angular = turn_first(base_command(reference, measurement.base_pose, rate, gains), heading, gains)
     progress = next_progress(trajectory, progress, rate, dt)
     at_end = progress >= last_progress(trajectory) and base_error <= gains.base_error_stop
     status = DONE if at_end else OK

@@ -2,6 +2,8 @@
 # Runs the door mission in Gazebo once per start pose: mission_batch.sh <push|pull> [pose names...] (default: all).
 # For each pose: fresh headless sim + bringup, SLAM settles, /door_mission/start, wait for /door_mission/result,
 # then log the outcome, the true hinge angle and where the robot ended. Results: ~/.ros/mission_batch/<side>.csv
+# EXTRA_ARGS: more main.launch arguments, e.g. EXTRA_ARGS="slam_mask_door:=false"
+# RECORD_TOPICS: topics to record per pose into <out>/<side>_<name>.bag, from the mission start to its result
 
 set -uo pipefail
 side=$1
@@ -32,7 +34,7 @@ for name in "${names[@]}"; do
   log=$out/${side}_${name}_$(date +%H%M%S).log
   echo "== $side/$name ($x, $y, $yaw) -> $log"
   roslaunch tiago_door_bringup main.launch simulation:=true gui:=false \
-    gzpose:="-x $x -y $y -z 0 -R 0 -P 0 -Y $yaw" > "$log" 2>&1 &
+    gzpose:="-x $x -y $y -z 0 -R 0 -P 0 -Y $yaw" ${EXTRA_ARGS:-} > "$log" 2>&1 &
   launch=$!
 
   up_by=$(( $(date +%s) + startup_timeout ))
@@ -52,11 +54,21 @@ for name in "${names[@]}"; do
     continue
   fi
   sleep "$settle"
+  record=
+  if [ -n "${RECORD_TOPICS:-}" ]; then
+    rosbag record -O "$out/${side}_${name}.bag" ${RECORD_TOPICS} > /dev/null 2>&1 &
+    record=$!
+    sleep 3
+  fi
   start=$(date +%s)
   rosservice call --wait /door_mission/start > /dev/null
   result=$(timeout "$timeout" rostopic echo -n 1 /door_mission/result 2>/dev/null | sed -n 's/^data: //p' | tr -d '"')
   result=${result:-timeout}
   seconds=$(( $(date +%s) - start ))
+  if [ -n "$record" ]; then
+    kill -INT "$record" 2>/dev/null
+    wait "$record" 2>/dev/null
+  fi
   hinge_deg=$(rosservice call /gazebo/get_joint_properties "joint_name: 'hinged_door_right::hinge'" 2>/dev/null \
     | python3 -c "import sys,yaml,math; d=yaml.safe_load(sys.stdin.read()); print(round(abs(math.degrees(d['position'][0])), 1))" \
     2>/dev/null || echo nan)
